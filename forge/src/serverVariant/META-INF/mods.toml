@@ -1,0 +1,61 @@
+# Metadata for the "-server" jar variant. Keep in sync with src/main/resources/META-INF/mods.toml;
+# the only differences are marked below. Expanded with the same property map (see build.gradle).
+modLoader = "javafml"
+loaderVersion = "[${forge_version},)"
+license = "MIT"
+
+[[mods]]
+modId = "createdispatcher"
+version = "${version}"
+displayName = "Create Dispatcher (server)"
+authors = "Stacode"
+description = '''
+Timetable simulation, conflict detection and a web control interface for Create trains.
+Server-only build: registers no item, so clients do not need this mod installed.
+'''
+logoFile = "icon.png"
+# Differs: clients are not expected to have this mod, so do not paint the server red in the
+# multiplayer list over a mod-list mismatch.
+displayTest = "IGNORE_ALL_VERSION"
+
+[[dependencies.createdispatcher]]
+modId = "forge"
+mandatory = true
+versionRange = "[${forge_version},)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.createdispatcher]]
+modId = "minecraft"
+mandatory = true
+versionRange = "${minecraft_version}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.createdispatcher]]
+modId = "create"
+mandatory = true
+versionRange = "[${create_version},)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.createdispatcher]]
+modId = "architectury"
+mandatory = true
+versionRange = "[${architectury_api_version},)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.createdispatcher]]
+modId = "dragonlib"
+mandatory = true
+versionRange = "[${dragonlib_version},)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.createdispatcher]]
+modId = "tramways"
+mandatory = false
+versionRange = "[0.3.2,)"
+ordering = "AFTER"
+side = "BOTH"

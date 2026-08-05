@@ -36,6 +36,18 @@ server-side timetable tool. They are independent; install either or both.
 - Discord OAuth or `/dispatcher web session` one-time links; `viewer / planner / deployer` tiers;
   rate limits and a startup config check.
 
+## Server-only jars
+
+- A **`-server`** variant of each loader's jar (`…-forge-server.jar`, `…-fabric-server.jar`) registers
+  no item, so players do not have to install anything to join. Everything server-side survives — web
+  interface, planner, headless simulation, deploy, `/dispatcher web …`; the in-game half (item,
+  editor, map, simulation window, preset GUI) is what you trade away.
+- The normal jar can be switched over in place with an empty
+  `config/createdispatcher/server-only.marker`, or `-Dcreatedispatcher.serverOnly=true`.
+- The rule behind it: the server's registry must stay a subset of its clients', so mind any other
+  content-adding mod you run server-side. DragonLib is unaffected — clients running Create addons
+  have it anyway.
+
 ## Migrating from Create Realism's Advanced-Schedule builds
 
 - Data is carried over automatically on first start: `config/realism-web/` →

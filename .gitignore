@@ -17,6 +17,8 @@ classes/
 .vscode
 .settings
 *.launch
+# local deploy script (holds FTP credentials)
+deploy.sh
 
 # web frontend: node tooling ignored; built web/dist/ IS committed (Gradle/CI stay Node-free)
 web/node_modules/

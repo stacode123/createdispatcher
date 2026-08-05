@@ -1,0 +1,5 @@
+Presence of this file on the classpath switches Create Dispatcher into server-only mode:
+the Advanced Schedule item and its menu type are never registered, so a client that does not
+have this mod installed can still join the server. See net.Dispatcher.foundation.ServerOnly.
+
+It is baked into the "-server" jar variant only; the normal jar must not contain it.

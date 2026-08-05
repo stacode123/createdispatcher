@@ -1,5 +1,6 @@
 package net.Dispatcher.web.live;
 
+import com.mojang.authlib.GameProfile;
 import com.simibubi.create.Create;
 import com.simibubi.create.content.trains.entity.Train;
 import com.simibubi.create.content.trains.entity.TravellingPoint;
@@ -8,9 +9,12 @@ import net.Dispatcher.config.DispatcherConfig;
 import net.Dispatcher.content.simulator.SimTopology;
 import net.Dispatcher.web.graph.WebGraphStore;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.players.GameProfileCache;
 import net.minecraft.world.level.GameRules;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,9 +31,10 @@ public final class LiveTrainSampler {
     /** A train standing at a station this frame — rolled-through waypoints never qualify. */
     public record StationStop(UUID trainId, UUID stationId) {}
 
+    /** {@code owner} is the resolved player name, "" when absent or unresolvable. */
     public record RosterEntry(UUID id, String name, UUID graphId, double length, int carriages,
                               boolean doubleEnded, String state, String scheduleTitle,
-                              String destination, String currentStation) {}
+                              String destination, String currentStation, String owner) {}
 
     public static final class Frame {
         public final long gameTick;
@@ -58,6 +63,8 @@ public final class LiveTrainSampler {
     private volatile int rosterVersion;
     private int lastRosterHash;
     private int tickCounter;
+    /** Owner UUID → player name; server-thread only, so a plain HashMap is enough. */
+    private final Map<UUID, String> ownerNames = new HashMap<>();
     /**
      * Decaying per-train max |speed| observed (blocks/tick) — evidence for the
      * snapshotter that a train is powered even when its fuel counter reads 0
@@ -124,7 +131,7 @@ public final class LiveTrainSampler {
             if (currentStation != null && Math.abs(train.speed) < 0.05)
                 stops.add(new StationStop(train.id, currentStation.id));
 
-            RosterEntry rosterEntry = describe(train, currentStation);
+            RosterEntry rosterEntry = describe(train, currentStation, ownerName(server, train.owner));
             entries.add(rosterEntry);
             hash = 31 * hash + rosterEntry.hashCode();
         }
@@ -150,7 +157,28 @@ public final class LiveTrainSampler {
         return frame;
     }
 
-    private static RosterEntry describe(Train train, GlobalStation current) {
+    /**
+     * The owner's player name, "" when the train has no owner or the name is not
+     * known here. Cache-only by design: {@code GameProfileCache.get(UUID)} is a map
+     * lookup, never a session-server call, so this stays safe on the server thread.
+     * Successful resolutions are remembered for the server's lifetime — names change
+     * rarely, and a stable string keeps the roster hash from churning. Failures are
+     * not cached, so an owner who has never joined resolves as soon as they do.
+     */
+    private String ownerName(MinecraftServer server, UUID owner) {
+        if (owner == null) return "";
+        String cached = ownerNames.get(owner);
+        if (cached != null) return cached;
+        ServerPlayer online = server.getPlayerList().getPlayer(owner);
+        GameProfileCache cache = server.getProfileCache();
+        String name = online != null ? online.getGameProfile().getName()
+                : cache == null ? ""
+                : cache.get(owner).map(GameProfile::getName).orElse("");
+        if (!name.isEmpty()) ownerNames.put(owner, name);
+        return name;
+    }
+
+    private static RosterEntry describe(Train train, GlobalStation current, String owner) {
         double length = 2;
         for (var carriage : train.carriages) length += carriage.bogeySpacing;
         for (int spacing : train.carriageSpacing) length += spacing;
@@ -169,6 +197,7 @@ public final class LiveTrainSampler {
 
         return new RosterEntry(train.id, train.name.getString(), train.graph.id, Math.round(length * 10) / 10.0,
                 train.carriages.size(), train.doubleEnded, state, title,
-                destination != null ? destination.name : "", current != null ? current.name : "");
+                destination != null ? destination.name : "", current != null ? current.name : "",
+                owner);
     }
 }

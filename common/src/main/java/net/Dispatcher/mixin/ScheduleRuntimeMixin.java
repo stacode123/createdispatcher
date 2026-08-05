@@ -3,6 +3,7 @@ package net.Dispatcher.mixin;
 import com.simibubi.create.content.trains.schedule.Schedule;
 import com.simibubi.create.content.trains.schedule.ScheduleRuntime;
 import net.Dispatcher.Interfaces.IAdvancedScheduleRuntime;
+import net.Dispatcher.foundation.ServerOnly;
 import net.Dispatcher.foundation.util.AllDispatcherItems;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
@@ -48,6 +49,10 @@ public abstract class ScheduleRuntimeMixin implements IAdvancedScheduleRuntime {
         if (!dispatcher$advancedSchedule)
             return;
         dispatcher$advancedSchedule = false;
+        if (ServerOnly.enabled())
+            // No item was registered, so hand back Create's. The marker can still be set here:
+            // DeployService sets it directly, without an item ever existing.
+            return;
         ItemStack vanilla = cir.getReturnValue();
         if (vanilla.isEmpty())
             return;

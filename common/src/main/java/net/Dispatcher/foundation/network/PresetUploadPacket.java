@@ -35,11 +35,15 @@ public class PresetUploadPacket implements C2SPacket {
             player.displayClientMessage(Component.translatable("dispatcher.preset.no_schedule"), false);
             return;
         }
+        // In-game saves have no folder picker, so they file themselves: every player
+        // gets a folder named after them. Player names are 1-16 characters with no
+        // control characters, so they always survive PresetStore.normalizeFolder.
+        String owner = player.getGameProfile().getName();
         try {
-            var preset = PresetStore.of(player.server).create(name,
-                    "item:" + player.getGameProfile().getName(), held.getTag().getCompound("Schedule"));
+            var preset = PresetStore.of(player.server).create(name, owner, "item:" + owner,
+                    held.getTag().getCompound("Schedule"));
             player.displayClientMessage(
-                    Component.translatable("dispatcher.preset.saved", preset.name()), false);
+                    Component.translatable("dispatcher.preset.saved", preset.displayName()), false);
         } catch (PresetStore.PresetException e) {
             player.displayClientMessage(
                     Component.translatable("dispatcher.preset.error." + e.key), false);

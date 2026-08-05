@@ -61,6 +61,8 @@ export interface RosterEntry {
   scheduleTitle: string;
   destination: string;
   currentStation: string;
+  /** Owning player's name — '' when the train has no owner, or none is known. */
+  owner: string;
 }
 
 export interface HelloEvent {

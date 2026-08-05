@@ -35,6 +35,7 @@ export async function startMockLive() {
     scheduleTitle: 'Fixture line',
     destination: '',
     currentStation: '',
+    owner: i % 3 === 0 ? '' : `driver${(i % 4) + 1}`,
   }));
   liveTrains.setRoster(roster, 1);
 

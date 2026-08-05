@@ -62,21 +62,23 @@ dependencies {
     modImplementation("maven.modrinth:dragonlib:RWduTzyi")
 }
 
+// Shared with serverVariantMeta below: the -server jar expands its own mods.toml from the same map.
+ext.modMetaProperties = Map.of(
+        "mod_id", mod_id,
+        "version", mod_version,
+        "forge_version", forge_version.split("\\.")[0],
+        "minecraft_version", minecraft_version,
+        "create_version", create_forge_version.split("-")[0],
+        "tramways_version", tramways_version,
+        "architectury_api_version", architectury_api_version,
+        "dragonlib_version", dragonlib_version
+) as Map<String, String>
+
 processResources {
-    Map<String, String> properties = Map.of(
-            "mod_id", mod_id,
-            "version", mod_version,
-            "forge_version", forge_version.split("\\.")[0],
-            "minecraft_version", minecraft_version,
-            "create_version", create_forge_version.split("-")[0],
-            "tramways_version", tramways_version,
-            "architectury_api_version", architectury_api_version,
-            "dragonlib_version", dragonlib_version
-    ) as Map<String, String>
-    properties.forEach((k, v) -> inputs.property(k, v))
+    modMetaProperties.forEach((k, v) -> inputs.property(k, v))
 
     filesMatching("META-INF/mods.toml") {
-        expand properties
+        expand modMetaProperties
     }
 }
 
@@ -105,6 +107,39 @@ remapJar {
 
 jar {
     archiveClassifier = "dev"
+}
+
+// --- Server-only variant -----------------------------------------------------------------------
+// Same classes as the normal jar, plus a marker resource and its own mods.toml. ServerOnly.enabled()
+// finds the marker, commonSetup() then registers no item, and a client without this mod can join.
+def serverVariantMeta = tasks.register("serverVariantMeta", Copy) {
+    modMetaProperties.forEach((k, v) -> inputs.property(k, v))
+    from("src/serverVariant") {
+        include "META-INF/mods.toml"
+        expand modMetaProperties
+    }
+    from(rootProject.file("gradle/server-variant/createdispatcher.server-only"))
+    into layout.buildDirectory.dir("serverVariant")
+}
+
+def serverJar = tasks.register("serverJar", Zip) {
+    // Zip, not Jar: a Jar task would regenerate the manifest and lose loom's MixinConfigs attribute.
+    dependsOn tasks.remapJar
+    from({ zipTree(tasks.remapJar.archiveFile.get().asFile) }) {
+        exclude "META-INF/mods.toml"
+    }
+    from(serverVariantMeta)
+
+    archiveClassifier = "server"
+    archiveExtension = "jar"
+    destinationDirectory = layout.buildDirectory.dir("libs")
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+tasks.named("build") {
+    dependsOn serverJar
 }
 
 sourcesJar {

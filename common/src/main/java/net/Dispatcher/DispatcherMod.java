@@ -1,6 +1,7 @@
 package net.Dispatcher;
 
 import com.simibubi.create.foundation.data.CreateRegistrate;
+import net.Dispatcher.foundation.ServerOnly;
 import net.Dispatcher.foundation.util.AllDispatcherItems;
 import net.Dispatcher.foundation.util.AllMenuTypes;
 import net.minecraft.resources.ResourceLocation;
@@ -18,8 +19,15 @@ public class DispatcherMod {
 
     public static void commonSetup() {
         DNetworking.register();
-        AllDispatcherItems.register();
-        AllMenuTypes.register();
+        if (ServerOnly.enabled()) {
+            // Both classes register in static field initialisers, so skipping the calls is what
+            // keeps them out of the registries — see ServerOnly for why that matters.
+            LOGGER.info("Server-only mode ({}): no item or menu registered, clients do not need {}",
+                    ServerOnly.source(), NAME);
+        } else {
+            AllDispatcherItems.register();
+            AllMenuTypes.register();
+        }
         net.Dispatcher.web.WebBootstrap.init();
     }
 

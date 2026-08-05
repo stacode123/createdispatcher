@@ -28,6 +28,27 @@ station auto-schedule and Create Railways Navigator options all work) that adds:
 Zero new runtime dependencies: the JDK's own HTTP server, SSE, and a hand-rolled Svelte frontend
 committed as a build artifact so Gradle and CI stay Node-free.
 
+## Server-only install
+
+If you only want the web interface, use the **`-server`** jar (`…-forge-server.jar` /
+`…-fabric-server.jar`). It ships the same code but registers no item, so **players do not need to
+install anything** — a plain Create client joins normally. The web interface, planner, headless
+simulator, deploy and `/dispatcher web …` all work; what you give up is the in-game half (the
+Advanced Schedule item, its editor, the map screen, the simulation window, the preset GUI).
+Schedules deployed from the web are ordinary Create schedules, so a mod-less player can still read
+them at a station.
+
+The rule that makes this work: **the server's registry has to be a subset of the client's** — a
+client missing a registry entry the server has is disconnected during login, which is exactly what
+the Advanced Schedule item was causing. So the same caution applies to every other content-adding
+mod you run server-side, not just this one. DragonLib is fine, since clients that run Create addons
+generally have it already; the `-server` jar keeps it as a dependency even though only the client GUI
+uses it.
+
+The normal jar can be switched over without re-downloading — create an empty
+`config/createdispatcher/server-only.marker`, or pass `-Dcreatedispatcher.serverOnly=true`. Either
+way the server logs one line at startup saying the item was not registered.
+
 ## Docs
 
 - `docs/web-interface.md` — enabling the web server, login, TLS, deploy semantics, full config table

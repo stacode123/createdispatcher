@@ -61,6 +61,8 @@
               scheduleTitle: i % 7 === 3 ? 'Depot stabling' : 'Fixture line',
               destination: '',
               currentStation: '',
+              // some unowned, to exercise the owner column's fallback
+              owner: i % 5 === 2 ? '' : `driver${(i % 4) + 1}`,
             })),
             1,
           );
@@ -132,6 +134,33 @@
     newFolderOpen = false;
     newFolderDraft = '';
     if (draft) folders.addFolder('t', draft);
+  }
+
+  /**
+   * Whether each train row carries its owner underneath. A view preference, so it
+   * lives in localStorage rather than on the server — "who runs this?" is a question
+   * you are either asking all session or not at all.
+   */
+  const OWNER_KEY = 'dispatcher.planner.owners';
+  let showOwners = $state(readShowOwners());
+
+  function readShowOwners(): boolean {
+    try {
+      return localStorage.getItem(OWNER_KEY) === '1';
+    } catch {
+      /* private mode or corrupt value — fall back to the schedule line */
+      return false;
+    }
+  }
+
+  /** Owners are off by default — a row with nothing under it is the quiet baseline. */
+  function toggleOwners() {
+    showOwners = !showOwners;
+    try {
+      localStorage.setItem(OWNER_KEY, showOwners ? '1' : '0');
+    } catch {
+      /* not persisting the choice is survivable — it still holds for this session */
+    }
   }
 
   /**
@@ -239,9 +268,15 @@
     <aside class="panel right" class:droppable={sims.ui.drag != null}>
       <div class="col-head mono">
         TRAINS ({liveTrains.ui.roster.length})
+        <button
+          class="headbtn push"
+          class:on={showOwners}
+          onclick={toggleOwners}
+          title={showOwners ? 'hide train owners' : 'show who owns each train'}
+        >owner</button>
         {#if canPlan}
           <button
-            class="newfolder"
+            class="headbtn"
             onclick={() => {
               newFolderOpen = !newFolderOpen;
               newFolderDraft = '';
@@ -430,9 +465,10 @@
                     }}
                   >×</button>
                 </div>
-              {:else if train.scheduleTitle || train.destination}
-                <div class="sub mono">
-                  {train.scheduleTitle}{train.scheduleTitle && train.destination ? ' → ' : ''}{train.destination}
+              {/if}
+              {#if showOwners}
+                <div class="sub mono" class:unowned={!train.owner}>
+                  {train.owner || 'no owner'}
                 </div>
               {/if}
             </div>
@@ -511,11 +547,24 @@
     color: var(--text-dim);
     border-bottom: 1px solid var(--border);
   }
-  .newfolder {
-    margin-left: auto;
+  .headbtn {
     font-size: 11px;
     padding: 1px 6px;
     letter-spacing: 0;
+  }
+  /* The first header button carries the gap, so the row still packs right when
+     "+ folder" is hidden from viewers. */
+  .push {
+    margin-left: auto;
+  }
+  .headbtn.on {
+    color: var(--station);
+    border-color: var(--station);
+  }
+  /* An unowned train is a fact about the train, not a missing value — say so quietly. */
+  .sub.unowned {
+    opacity: 0.55;
+    font-style: italic;
   }
   .newfolderrow {
     padding: 6px 8px 0;

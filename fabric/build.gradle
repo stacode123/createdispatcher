@@ -101,6 +101,29 @@ jar {
     archiveClassifier = "dev"
 }
 
+// --- Server-only variant -----------------------------------------------------------------------
+// The normal jar plus one marker resource: ServerOnly.enabled() finds it, commonSetup() then
+// registers no item, and a client without this mod can join. Nothing else changes — Fabric has no
+// mod-list join check to appease, so fabric.mod.json is left exactly as loom remapped it (which is
+// also what keeps its accessWidener and nested-jar entries intact).
+def serverJar = tasks.register("serverJar", Zip) {
+    // Zip, not Jar: a Jar task would regenerate the manifest and lose loom's MixinConfigs attribute.
+    dependsOn tasks.remapJar
+    from({ zipTree(tasks.remapJar.archiveFile.get().asFile) })
+    from(rootProject.file("gradle/server-variant/createdispatcher.server-only"))
+
+    archiveClassifier = "server"
+    archiveExtension = "jar"
+    destinationDirectory = layout.buildDirectory.dir("libs")
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+tasks.named("build") {
+    dependsOn serverJar
+}
+
 sourcesJar {
     def commonSources = project(":common").sourcesJar
     dependsOn commonSources
