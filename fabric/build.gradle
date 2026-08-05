@@ -1,0 +1,148 @@
+plugins {
+    id "com.github.johnrengelman.shadow" version "7.1.2"
+}
+
+architectury {
+    platformSetupLoomIde()
+    fabric()
+}
+
+loom {
+    accessWidenerPath = project(":common").loom.accessWidenerPath
+}
+
+configurations {
+    common
+    shadowCommon // Don't use shadow from the shadow plugin because we don't want IDEA to index this.
+    compileClasspath.extendsFrom common
+    runtimeClasspath.extendsFrom common
+    developmentFabric.extendsFrom common
+}
+
+configurations.configureEach {
+    resolutionStrategy {
+        force("net.fabricmc:fabric-loader:${fabric_loader_version}")
+    }
+}
+
+dependencies {
+    modImplementation("net.fabricmc:fabric-loader:${fabric_loader_version}")
+    common(project(path: ":common", configuration: "namedElements")) { transitive = false }
+    shadowCommon(project(path: ":common", configuration: "transformProductionFabric")) { transitive = false }
+
+    modImplementation("net.fabricmc.fabric-api:fabric-api:${fabric_api_version}")
+
+    // Create - dependencies are added transitively
+    modImplementation("com.simibubi.create:create-fabric:${create_fabric_version}-mc${minecraft_version}")
+
+    // Development QOL
+    modLocalRuntime("maven.modrinth:lazydfu:${lazydfu_version}")
+    modLocalRuntime("com.terraformersmc:modmenu:${modmenu_version}")
+
+    // Create Railways Navigator, dev runtime only, for schedule-editor compat testing (version id = 1.20.1-beta-0.9.1-C6 fabric).
+    // modCompileOnly puts CRN in the same remap group as Create, so its calls into Create widgets resolve in dev.
+    modCompileOnly("maven.modrinth:create-railways-navigator:Byo7nLl9") { transitive = false }
+    modLocalRuntime("maven.modrinth:create-railways-navigator:Byo7nLl9") { transitive = false }
+
+    // Steam 'n' Rails cannot run in dev — see the forge module's note.
+
+    switch (fabric_recipe_viewer.toLowerCase(Locale.ROOT)) {
+        case "jei": modLocalRuntime("mezz.jei:jei-${minecraft_version}-fabric:${jei_version}"); break
+        case "rei": modLocalRuntime("me.shedaniel:RoughlyEnoughItems-fabric:${rei_version}"); break
+        case "emi": modLocalRuntime("dev.emi:emi:${emi_version}"); break
+        case "disabled": break
+        default: println("Unknown recipe viewer specified: ${fabric_recipe_viewer}. Must be JEI, REI, EMI, or disabled.")
+    }
+
+    modCompileOnly("purplecreate.tramways:tramways-fabric:$tramways_version-mc1.20.1-fabric")
+    modRuntimeOnly("purplecreate.tramways:tramways-fabric:$tramways_version-mc1.20.1-fabric")
+
+    modImplementation "dev.architectury:architectury-fabric:$rootProject.architectury_api_version"
+
+    // DragonLib's own maven (maven.lounode.top) is unreachable; Modrinth maven, version id = 1.20.1-beta-3.0.28 fabric
+    modImplementation(include("maven.modrinth:dragonlib:uz4tlLzk"))
+}
+
+processResources {
+    // set up properties for filling into metadata
+    Map<String, String> properties = Map.of(
+            "mod_id", mod_id,
+            "version", mod_version,
+            "fabric_loader_version", fabric_loader_version,
+            "fabric_api_version", fabric_api_version,
+            "minecraft_version", minecraft_version,
+            "create_version", create_fabric_version,
+            "tramways_version", tramways_version,
+            "architectury_version", architectury_api_version,
+            "dragonlib_version", dragonlib_version
+    )
+    properties.forEach((k, v) -> inputs.property(k, v))
+
+    filesMatching("fabric.mod.json") {
+        expand properties
+    }
+}
+
+shadowJar {
+    exclude "architectury.common.json"
+
+    configurations = [project.configurations.shadowCommon]
+    archiveClassifier = "dev-shadow"
+}
+
+remapJar {
+    injectAccessWidener = true
+    input.set shadowJar.archiveFile
+    dependsOn shadowJar
+    archiveClassifier = null
+}
+
+jar {
+    archiveClassifier = "dev"
+}
+
+sourcesJar {
+    def commonSources = project(":common").sourcesJar
+    dependsOn commonSources
+    from commonSources.archiveFile.map { zipTree(it) }
+}
+
+components.java {
+    withVariantsFromConfiguration(project.configurations.shadowRuntimeElements) {
+        skip()
+    }
+}
+
+// Re-enable at first release (D5), once modrinth_id / curseforge_id are filled in.
+//publishMods {
+//    type = STABLE
+//    file = tasks.remapJar.archiveFile
+//    version.set(mod_version)
+//    changelog = rootProject.file("CHANGELOG.md").text
+//
+//    curseforge {
+//        displayName = file.map { it.asFile.name }
+//        projectId = curseforge_id
+//        accessToken = System.getenv("CURSEFORGE_TOKEN")
+//        minecraftVersions.add(minecraft_version)
+//        modLoaders.add("fabric")
+//
+//        requires("create-fabric")
+//        requires("architectury-api")
+//        requires("dragonlib")
+//        optional("tramways")
+//    }
+//
+//    modrinth {
+//        displayName = file.map { it.asFile.name }
+//        projectId = modrinth_id
+//        accessToken = System.getenv("MODRINTH_TOKEN")
+//        minecraftVersions.add(minecraft_version)
+//        modLoaders.add("fabric")
+//
+//        requires("create-fabric")
+//        requires("architectury-api")
+//        requires("dragonlib")
+//        optional("tramways")
+//    }
+//}

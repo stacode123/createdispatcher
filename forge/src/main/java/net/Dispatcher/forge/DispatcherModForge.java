@@ -1,0 +1,35 @@
+package net.Dispatcher.forge;
+
+import dev.architectury.platform.forge.EventBuses;
+import net.Dispatcher.DispatcherMod;
+import net.Dispatcher.forge.config.ForgeConfigRegistration;
+import net.Dispatcher.foundation.commands.DispatcherCommands;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+
+@Mod(DispatcherMod.MOD_ID)
+public class DispatcherModForge {
+    public DispatcherModForge() {
+        // registrate must be given the mod event bus on forge before registration
+        IEventBus eventBus = FMLJavaModLoadingContext.get().getModEventBus();
+        EventBuses.registerModEventBus(DispatcherMod.MOD_ID, eventBus);
+        DispatcherMod.REGISTRATE.registerEventListeners(eventBus);
+        DispatcherMod.init();
+        DispatcherMod.commonSetup();
+        eventBus.addListener(this::commonSetup);
+        ForgeConfigRegistration.register();
+        MinecraftForge.EVENT_BUS.addListener(this::onRegisterCommands);
+    }
+
+    public void onRegisterCommands(RegisterCommandsEvent event) {
+        DispatcherCommands.register(event.getDispatcher());
+    }
+
+    public void commonSetup(final FMLCommonSetupEvent event) {
+        event.enqueueWork(DNetworkingImpl::init);
+    }
+}

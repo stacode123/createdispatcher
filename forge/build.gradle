@@ -1,0 +1,156 @@
+plugins {
+    id "com.github.johnrengelman.shadow" version "7.1.2"
+}
+
+architectury {
+    platformSetupLoomIde()
+    forge()
+}
+
+loom {
+    accessWidenerPath = project(":common").loom.accessWidenerPath
+
+    forge {
+        convertAccessWideners = true
+        extraAccessWideners.add loom.accessWidenerPath.get().asFile.name
+    }
+}
+
+configurations {
+    common
+    shadowCommon // Don't use shadow from the shadow plugin because we don't want IDEA to index this.
+    compileClasspath.extendsFrom common
+    runtimeClasspath.extendsFrom common
+    developmentForge.extendsFrom common
+}
+
+dependencies {
+    forge("net.minecraftforge:forge:${minecraft_version}-${forge_version}")
+    common(project(path: ":common", configuration: "namedElements")) { transitive = false }
+    shadowCommon(project(path: ":common", configuration: "transformProductionForge")) { transitive = false }
+
+    compileOnly("io.github.llamalad7:mixinextras-common:${mixin_extras_version}")
+    annotationProcessor(implementation(include("io.github.llamalad7:mixinextras-forge:${mixin_extras_version}")))
+
+    // Create and its dependencies
+    modImplementation("com.simibubi.create:create-${minecraft_version}:${create_forge_version}:slim") { transitive = false }
+    modImplementation("com.tterrag.registrate:Registrate:${registrate_forge_version}")
+    modImplementation("net.createmod.ponder:Ponder-Forge-${minecraft_version}:${ponder_forge_version}")
+    modCompileOnly("dev.engine-room.flywheel:flywheel-forge-api-${minecraft_version}:${flywheel_forge_version}")
+    modRuntimeOnly("dev.engine-room.flywheel:flywheel-forge-${minecraft_version}:${flywheel_forge_version}")
+
+    // Development QOL
+    modLocalRuntime("mezz.jei:jei-${minecraft_version}-forge:${jei_version}") { transitive = false }
+
+    modCompileOnly("purplecreate.tramways:tramways-forge:$tramways_version-mc1.20.1-forge")
+    modRuntimeOnly("purplecreate.tramways:tramways-forge:$tramways_version-mc1.20.1-forge")
+
+    // Create Railways Navigator, dev runtime only, for schedule-editor compat testing (version id = 1.20.1-beta-0.9.1-C6 forge).
+    // modCompileOnly puts CRN in the same remap group as Create, so its calls into Create widgets resolve in dev.
+    modCompileOnly("maven.modrinth:create-railways-navigator:r5q4MIYy") { transitive = false }
+    modLocalRuntime("maven.modrinth:create-railways-navigator:r5q4MIYy") { transitive = false }
+
+    // Steam 'n' Rails cannot run in this dev environment: as a raw jar in
+    // run/mods its SRG references crash DFU init, and through loom
+    // (modLocalRuntime) the Architectury refmap remapper garbles its
+    // TrackBlockOutline accessor ("LONG_CROSS" -> "ONG_CROSS"), hard-failing
+    // Create's class load. The simulator's SnR schedule support is covered
+    // by JUnit (WaypointTest); verify the GUI side on a production pack.
+
+    modImplementation "dev.architectury:architectury-forge:$rootProject.architectury_api_version"
+    // DragonLib's own maven (maven.lounode.top) is unreachable; Modrinth maven, version id = 1.20.1-beta-3.0.28 forge
+    modImplementation("maven.modrinth:dragonlib:RWduTzyi")
+}
+
+processResources {
+    Map<String, String> properties = Map.of(
+            "mod_id", mod_id,
+            "version", mod_version,
+            "forge_version", forge_version.split("\\.")[0],
+            "minecraft_version", minecraft_version,
+            "create_version", create_forge_version.split("-")[0],
+            "tramways_version", tramways_version,
+            "architectury_api_version", architectury_api_version,
+            "dragonlib_version", dragonlib_version
+    ) as Map<String, String>
+    properties.forEach((k, v) -> inputs.property(k, v))
+
+    filesMatching("META-INF/mods.toml") {
+        expand properties
+    }
+}
+
+loom {
+    forge {
+        // One config: every platform-side mixin in Create Realism was ETCS/banking and
+        // did not come along, so there is no forge-side mixin package here.
+        mixinConfig("dispatcherCommon.mixins.json")
+    }
+}
+
+shadowJar {
+    exclude "fabric.mod.json"
+    exclude "architectury.common.json"
+
+    configurations = [project.configurations.shadowCommon]
+    archiveClassifier = "dev-shadow"
+}
+
+remapJar {
+    injectAccessWidener = true
+    input.set shadowJar.archiveFile
+    dependsOn shadowJar
+    archiveClassifier = null
+}
+
+jar {
+    archiveClassifier = "dev"
+}
+
+sourcesJar {
+    def commonSources = project(":common").sourcesJar
+    dependsOn commonSources
+    from commonSources.archiveFile.map { zipTree(it) }
+}
+
+components.java {
+    withVariantsFromConfiguration(project.configurations.shadowRuntimeElements) {
+        skip()
+    }
+}
+
+// Re-enable at first release (D5), once modrinth_id / curseforge_id are filled in.
+//publishMods {
+//    type = STABLE
+//    file = tasks.remapJar.archiveFile
+//    version.set(mod_version)
+//    changelog = rootProject.file("CHANGELOG.md").text
+//
+//    curseforge {
+//        displayName = file.map { it.asFile.name }
+//        projectId = curseforge_id
+//        accessToken = System.getenv("CURSEFORGE_TOKEN")
+//        minecraftVersions.add(minecraft_version)
+//        modLoaders.add("forge")
+//        modLoaders.add("neoforge")
+//
+//        requires("create")
+//        requires("architectury-api")
+//        requires("dragonlib")
+//        optional("tramways")
+//    }
+//
+//    modrinth {
+//        displayName = file.map { it.asFile.name }
+//        projectId = modrinth_id
+//        accessToken = System.getenv("MODRINTH_TOKEN")
+//        minecraftVersions.add(minecraft_version)
+//        modLoaders.add("forge")
+//        modLoaders.add("neoforge")
+//
+//        requires("create")
+//        requires("architectury-api")
+//        requires("dragonlib")
+//        optional("tramways")
+//    }
+//}

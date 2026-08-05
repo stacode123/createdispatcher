@@ -1,0 +1,3 @@
+{
+  "dispatcher.network.version_mismatch": "Create Dispatcher version mismatch: the server runs protocol %s, this client runs %s. Update the mod on both sides."
+}

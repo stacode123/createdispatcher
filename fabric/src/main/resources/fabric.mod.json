@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "createdispatcher",
+  "version": "${version}",
+  "name": "Create Dispatcher",
+  "description": "Timetable simulation, conflict detection and a web control interface for Create trains",
+  "authors": [
+    "Stacode"
+  ],
+  "contact": {
+    "sources": "https://github.com/stacode123/CreateDispatcher"
+  },
+  "license": "MIT",
+  "icon": "assets/createdispatcher/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "net.Dispatcher.fabric.DispatcherFabric"
+    ]
+  },
+  "mixins": [
+    "dispatcherCommon.mixins.json"
+  ],
+  "depends": {
+    "minecraft": "${minecraft_version}",
+    "fabricloader": ">=${fabric_loader_version}",
+    "fabric-api": ">=${fabric_api_version}",
+    "create": ">=${create_version}",
+    "architectury": ">=${architectury_version}",
+    "dragonlib": ">=${minecraft_version}-${dragonlib_version}"
+  },
+  "recommends": {
+    "tramways": ">=${tramways_version}"
+  }
+}

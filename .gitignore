@@ -1,0 +1,31 @@
+build/
+*.ipr
+run/
+*.iws
+out/
+*.iml
+.gradle/
+output/
+bin/
+libs/
+
+.classpath
+.project
+.idea/
+classes/
+.metadata
+.vscode
+.settings
+*.launch
+
+# web frontend: node tooling ignored; built web/dist/ IS committed (Gradle/CI stay Node-free)
+web/node_modules/
+web/.vite/
+!web/dist/
+
+# scratch + tooling leftovers
+tmp/
+.vite/
+.architectury-transformer/
+.claude/
+CLAUDE.md

@@ -1,0 +1,108 @@
+architectury {
+    common(enabled_platforms.split(","))
+}
+
+loom {
+    accessWidenerPath = file("src/main/resources/createdispatcher.accesswidener")
+}
+
+dependencies {
+    modImplementation("net.fabricmc:fabric-loader:${fabric_loader_version}")
+    modCompileOnly("com.simibubi.create:create-fabric:${create_fabric_version}-mc${minecraft_version}")
+    modImplementation "dev.architectury:architectury:$rootProject.architectury_api_version"
+
+    annotationProcessor(implementation("io.github.llamalad7:mixinextras-common:${mixin_extras_version}"))
+    modCompileOnly("purplecreate.tramways:tramways-common:$tramways_version-mc1.20.1-common")
+    modRuntimeOnly("purplecreate.tramways:tramways-common:$tramways_version-mc1.20.1-common")
+    // Create Railways Navigator — compile-only, guarded behind isModLoaded at runtime (compat/CrnCompat),
+    // same pattern as Tramways. Version id = 1.20.1-beta-0.9.1-C6 fabric (matches the create-fabric compile env).
+    modCompileOnly("maven.modrinth:create-railways-navigator:Byo7nLl9") { transitive = false }
+    // DragonLib's own maven (maven.lounode.top) is unreachable; Modrinth maven, version id = 1.20.1-beta-3.0.28 fabric
+    modImplementation("maven.modrinth:dragonlib:uz4tlLzk")
+
+    // The simulator core (content/simulator/core) is Minecraft-free by design;
+    // these tests run it on synthetic graphs without a game.
+    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+test {
+    useJUnitPlatform()
+    // Opt-in perf benchmark (SimEngineBenchmarkTest): -Dsim.benchmark=true
+    systemProperty "sim.benchmark", System.getProperty("sim.benchmark", "false")
+    testLogging {
+        events "failed", "skipped"
+        exceptionFormat "full"
+        showStandardStreams = System.getProperty("sim.benchmark") == "true"
+    }
+}
+
+// The committed frontend build (web/dist) ships inside the jar; the embedded web server serves it
+// from assets/createdispatcher/web/. Gradle/CI stay Node-free — rebuild it with: cd web && npm run build
+processResources {
+    from(rootProject.file("web/dist")) {
+        into "assets/createdispatcher/web"
+    }
+}
+
+/**
+ * Honesty check for the committed frontend build: web/dist is a build artifact Gradle cannot
+ * regenerate (no Node here, by design), so this recomputes the source digest that
+ * `npm run build` recorded in dist/.buildinfo.json and says so when the sources have moved on.
+ * Pure Groovy — the digest recipe is mirrored in web/vite.config.ts and the two must match.
+ * Warns locally; fails when CI is set, so a stale dist can never be released.
+ */
+tasks.register("verifyWebDist") {
+    group = "verification"
+    description = "Checks that the committed web/dist matches the sources in web/"
+
+    def webDir = rootProject.file("web")
+    def sourceDir = new File(webDir, "src")
+    def extraFiles = ["index.html", "package.json", "tsconfig.json", "vite.config.ts"]
+    def buildInfo = new File(webDir, "dist/.buildinfo.json")
+
+    inputs.dir(sourceDir).withPathSensitivity(PathSensitivity.RELATIVE)
+    extraFiles.each { inputs.file(new File(webDir, it)) }
+    inputs.files(project.files(buildInfo))
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def strict = System.getenv("CI") != null
+        def complain = { String message ->
+            if (strict) throw new GradleException(message)
+            logger.warn("WARNING: " + message)
+        }
+        if (!buildInfo.isFile()) {
+            complain("web/dist/.buildinfo.json is missing — run 'cd web && npm run build' and commit dist/")
+            return
+        }
+
+        def files = []
+        sourceDir.eachFileRecurse(groovy.io.FileType.FILES) { files << it }
+        extraFiles.each { files << new File(webDir, it) }
+        def relative = files.collect { webDir.toPath().relativize(it.toPath()).toString().replace('\\', '/') }.sort()
+
+        def total = java.security.MessageDigest.getInstance("SHA-256")
+        relative.each { path ->
+            def each = java.security.MessageDigest.getInstance("SHA-256")
+            each.update(new File(webDir, path).bytes)
+            total.update(path.getBytes("UTF-8"))
+            total.update((byte) 10)
+            total.update(each.digest().encodeHex().toString().getBytes("UTF-8"))
+            total.update((byte) 10)
+        }
+        def actual = total.digest().encodeHex().toString()
+        def recorded = (buildInfo.text =~ /"sourceDigest"\s*:\s*"([0-9a-f]{64})"/)
+        if (!recorded) {
+            complain("web/dist/.buildinfo.json has no sourceDigest — rebuild the frontend")
+            return
+        }
+        if (recorded[0][1] != actual)
+            complain("web/dist is stale: web/ sources changed since the last 'npm run build'. "
+                    + "Run 'cd web && npm run build' and commit dist/ (recorded "
+                    + recorded[0][1].substring(0, 12) + ", sources " + actual.substring(0, 12) + ")")
+    }
+}
+
+tasks.named("check") { dependsOn("verifyWebDist") }

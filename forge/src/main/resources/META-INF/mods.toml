@@ -1,0 +1,55 @@
+modLoader = "javafml"
+loaderVersion = "[${forge_version},)"
+license = "MIT"
+
+[[mods]]
+modId = "createdispatcher"
+version = "${version}"
+displayName = "Create Dispatcher"
+authors = "Stacode"
+description = '''
+Timetable simulation, conflict detection and a web control interface for Create trains
+'''
+logoFile = "icon.png"
+
+[[dependencies.createdispatcher]]
+modId = "forge"
+mandatory = true
+versionRange = "[${forge_version},)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.createdispatcher]]
+modId = "minecraft"
+mandatory = true
+versionRange = "${minecraft_version}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.createdispatcher]]
+modId = "create"
+mandatory = true
+versionRange = "[${create_version},)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.createdispatcher]]
+modId = "architectury"
+mandatory = true
+versionRange = "[${architectury_api_version},)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.createdispatcher]]
+modId = "dragonlib"
+mandatory = true
+versionRange = "[${dragonlib_version},)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.createdispatcher]]
+modId = "tramways"
+mandatory = false
+versionRange = "[0.3.2,)"
+ordering = "AFTER"
+side = "BOTH"
