@@ -39,6 +39,13 @@ public class SimTrainSpec {
     /** Per-column elapsed ticks of the active condition at snapshot. */
     public int[] startColumnElapsed = null;
     /**
+     * Per-column departure slot Realism had already booked at snapshot,
+     * relative to tick 0 ({@link TrainState#UNBOOKED} where there is none).
+     * Negative values are slots that are already due — that is how a train
+     * running late keeps leaving at once instead of waiting out a fresh day.
+     */
+    public long[] startColumnDepartAt = null;
+    /**
      * Station id the train was already navigating to at snapshot, or null.
      * Lets an in-transit train resume toward its actual destination instead
      * of re-resolving the filter.

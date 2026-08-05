@@ -11,7 +11,9 @@ import net.Dispatcher.compat.TramwaysCompat;
 import net.Dispatcher.content.simulator.core.SimCondition;
 import net.Dispatcher.content.simulator.core.SimProgram;
 import net.Dispatcher.content.simulator.core.SimTrainSpec;
+import net.Dispatcher.content.simulator.core.TrainState;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
@@ -53,7 +55,8 @@ public class NetworkSnapshotter {
         List<SimTrainSpec> specs = new ArrayList<>();
         List<Excluded> excluded = new ArrayList<>();
         for (Train train : trains) {
-            SimTrainSpec spec = snapshotTrain(train, topology, excluded, observedSpeedFloors);
+            SimTrainSpec spec = snapshotTrain(train, topology, excluded, observedSpeedFloors,
+                    level.getGameTime());
             if (spec != null)
                 specs.add(spec);
         }
@@ -61,7 +64,8 @@ public class NetworkSnapshotter {
     }
 
     private static SimTrainSpec snapshotTrain(Train train, SimTopology topology, List<Excluded> excluded,
-                                              java.util.Map<java.util.UUID, Double> observedSpeedFloors) {
+                                              java.util.Map<java.util.UUID, Double> observedSpeedFloors,
+                                              long gameTime) {
         String name = train.name.getString();
         TravellingPoint head = train.carriages.get(0).getLeadingPoint();
         if (head.node1 == null || head.node2 == null || head.edge == null) {
@@ -167,11 +171,18 @@ public class NetworkSnapshotter {
             int columns = runtime.conditionProgress.size();
             spec.startColumnProgress = new int[columns];
             spec.startColumnElapsed = new int[columns];
+            spec.startColumnDepartAt = new long[columns];
             for (int i = 0; i < columns; i++) {
                 spec.startColumnProgress[i] = runtime.conditionProgress.get(i);
                 CompoundTag context = i < runtime.conditionContext.size()
                         ? runtime.conditionContext.get(i) : new CompoundTag();
                 spec.startColumnElapsed[i] = context.getInt("Time");
+                // Realism's booked departure slot, read by NBT key like every
+                // other optional-mod integration here — absolute game time,
+                // so it moves into the engine's tick 0 = now frame.
+                spec.startColumnDepartAt[i] = context.contains("RealismDepartAt", Tag.TAG_LONG)
+                        ? context.getLong("RealismDepartAt") - gameTime
+                        : TrainState.UNBOOKED;
             }
         } else if (train.navigation != null && train.navigation.destination != null) {
             spec.resumeDestination = train.navigation.destination.id;

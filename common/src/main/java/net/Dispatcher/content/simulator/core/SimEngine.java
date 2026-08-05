@@ -332,6 +332,10 @@ public class SimEngine {
                         && spec.startColumnElapsed.length == train.columnElapsed.length)
                     System.arraycopy(spec.startColumnElapsed, 0, train.columnElapsed, 0,
                             train.columnElapsed.length);
+                if (spec.startColumnDepartAt != null
+                        && spec.startColumnDepartAt.length == train.columnDepartAt.length)
+                    System.arraycopy(spec.startColumnDepartAt, 0, train.columnDepartAt, 0,
+                            train.columnDepartAt.length);
             }
             train.result.visits.add(new SimResult.StationVisit(train.currentEntry, train.currentStationId,
                     train.currentStationName, 0, -1));
@@ -824,6 +828,8 @@ public class SimEngine {
         SimProgram.Entry entry = train.spec.program.entries.get(train.currentEntry);
         train.columnProgress = new int[entry.columns.size()];
         train.columnElapsed = new int[entry.columns.size()];
+        train.columnDepartAt = new long[entry.columns.size()];
+        java.util.Arrays.fill(train.columnDepartAt, TrainState.UNBOOKED);
         train.conditionsDone = false;
         train.departureGates.clear();
     }
@@ -842,9 +848,10 @@ public class SimEngine {
                     break;
                 }
                 SimCondition condition = column.get(train.columnProgress[i]);
-                if (condition.tick(clock, tick, train.columnElapsed[i], train)) {
+                if (condition.tick(clock, tick, i, train.columnElapsed[i], train)) {
                     train.columnProgress[i]++;
                     train.columnElapsed[i] = 0;
+                    train.columnDepartAt[i] = TrainState.UNBOOKED;
                 } else {
                     train.columnElapsed[i]++;
                 }
@@ -935,6 +942,7 @@ public class SimEngine {
         train.conditionsDone = false;
         train.columnProgress = null;
         train.columnElapsed = null;
+        train.columnDepartAt = null;
         train.currentEntry++;
         train.cooldown = 0;
         train.mode = TrainState.Mode.PRE_TRANSIT;

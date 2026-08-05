@@ -12,6 +12,12 @@ import java.util.UUID;
  */
 public class TrainState {
 
+    /**
+     * "No departure slot" — tick 0 is a real slot, and a slot seeded from a
+     * live snapshot may be negative (already due), so 0 cannot be the marker.
+     */
+    public static final long UNBOOKED = Long.MIN_VALUE;
+
     public enum Mode {
         /** Needs to start/resolve its current schedule entry. */
         PRE_TRANSIT,
@@ -72,8 +78,19 @@ public class TrainState {
     /** Set once every gate-relevant column finished; departure gates pending. */
     public boolean conditionsDone;
     public final List<SimCondition.Separation> departureGates = new ArrayList<>();
-    /** State for {@link SimCondition.TimeOfDayRealistic} rollover handling. */
-    public int lastScheduledDepartureDayTime;
+    /**
+     * Departure slot booked by this column's {@link SimCondition
+     * .TimeOfDayRealistic}, or {@link #UNBOOKED} — Realism's
+     * {@code RealismDepartAt} context tag, cleared with the rest of the
+     * column's context on arrival and on completion.
+     */
+    public long[] columnDepartAt;
+    /**
+     * Slot this train last departed on (Realism's {@code lastDepartureSlot}),
+     * or {@link #UNBOOKED}: carries across stops, and is what keeps a
+     * timetable moving forward instead of re-basing on every arrival.
+     */
+    public long lastDepartureSlot = UNBOOKED;
 
     public UUID currentStationId;
     public String currentStationName = "";
