@@ -1,5 +1,5 @@
 # Create Dispatcher
-
+⚠️ I used AI in making of this mod.
 **Minecraft 1.20.1 addon for [Create](https://modrinth.com/mod/create) that turns train schedules into
 a plannable timetable.** Forge and Fabric. Author: Stacode · MIT.
 
