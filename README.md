@@ -44,8 +44,8 @@ committed as a build artifact so Gradle and CI stay Node-free.
 ./gradlew :common:test --tests '*Benchmark*' -Dsim.benchmark=true   # opt-in perf benchmark
 ```
 
-Java 21 to run Gradle, Java 17 bytecode. The Gradle daemon is disabled, so every invocation
-cold-starts — allow a couple of minutes.
+Java 17 is enough (that is what CI builds on); a 21 JDK works too. Bytecode target is 17. The Gradle
+daemon is disabled, so every invocation cold-starts — allow a couple of minutes.
 
 Frontend (only needed when you change `web/src`):
 
