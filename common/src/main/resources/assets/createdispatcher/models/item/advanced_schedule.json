@@ -1,0 +1,6 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "createdispatcher:item/advanced_schedule"
+  }
+}

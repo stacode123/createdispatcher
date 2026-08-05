@@ -98,7 +98,7 @@ const LIGHT: Omit<Paint, 'rev'> = {
 
 export const paint: Paint = { ...DARK, rev: 0 };
 
-const STORAGE_KEY = 'realism.theme';
+const STORAGE_KEY = 'dispatcher.theme';
 
 function initial(): ThemeMode {
   try {

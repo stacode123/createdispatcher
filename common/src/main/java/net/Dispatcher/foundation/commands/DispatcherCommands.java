@@ -5,6 +5,6 @@ import net.minecraft.commands.CommandSourceStack;
 
 public class DispatcherCommands {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        // WebCommands.register(dispatcher) is wired here once the web layer lands (D2).
+        net.Dispatcher.web.WebCommands.register(dispatcher);
     }
 }

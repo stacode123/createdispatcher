@@ -724,7 +724,7 @@ function mockResult(
     meta: { ...sim.meta, graphId: 'fixture', graphVersion: 1, baseTick: 0, truncated: false },
     removed: removedNames,
     trains,
-    excluded: [['Depot Shunter', 'realism.sim.exclude.no_schedule', '']],
+    excluded: [['Depot Shunter', 'dispatcher.sim.exclude.no_schedule', '']],
     overrideIssues: [],
     conflicts: [
       [0, c1[0], c1[0] + 900, 1, c1[1], c1[2], 0, 'section §12', [2, 3], 0],

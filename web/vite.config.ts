@@ -4,8 +4,8 @@ import { join, relative } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
-// Point the dev proxy at any running server: REALISM_PROXY=http://host:port npm run dev
-const proxyTarget = process.env.REALISM_PROXY ?? 'http://localhost:8455';
+// Point the dev proxy at any running server: DISPATCHER_PROXY=http://host:port npm run dev
+const proxyTarget = process.env.DISPATCHER_PROXY ?? 'http://localhost:8455';
 
 /**
  * The sources the committed dist is built from. Gradle's `verifyWebDist` recomputes exactly
@@ -46,7 +46,7 @@ function sourceDigest(root: string): string {
  */
 function buildInfo(): Plugin {
   return {
-    name: 'realism-buildinfo',
+    name: 'dispatcher-buildinfo',
     apply: 'build',
     closeBundle() {
       const root = process.cwd();

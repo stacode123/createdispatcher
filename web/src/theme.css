@@ -1,4 +1,4 @@
-/* Realism Control — design tokens. Dark is the default (map-first);
+/* Create Dispatcher — design tokens. Dark is the default (map-first);
    the palette mirrors the in-game GraphMapScreen / sim_debug viewer. */
 :root {
   --bg: #10101c;

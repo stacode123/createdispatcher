@@ -4,8 +4,16 @@
   "package": "net.Dispatcher.mixin",
   "compatibilityLevel": "JAVA_17",
   "client": [
+    "mixinaccesors.ScheduleScreenAccessor",
+    "mixinaccesors.ScreenAccessor"
   ],
   "mixins": [
+    "ConductorBlockInteractionMixin",
+    "ScheduleRuntimeMixin",
+    "StationBlockEntityMixin",
+    "mixinaccesors.NavigationAccessor",
+    "mixinaccesors.ScheduleRuntimeAccessor",
+    "mixinaccesors.TramSignDataAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

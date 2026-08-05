@@ -77,7 +77,7 @@
 </script>
 
 <header>
-  <span class="brand mono">REALISM CONTROL</span>
+  <span class="brand mono">CREATE DISPATCHER</span>
   {#if session.state === 'in'}
     <nav>
       <button class:active={router.route === 'live'} onclick={() => router.navigate('live')}>Live</button>

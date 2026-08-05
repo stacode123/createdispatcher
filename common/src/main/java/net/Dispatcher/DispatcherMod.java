@@ -1,6 +1,8 @@
 package net.Dispatcher;
 
 import com.simibubi.create.foundation.data.CreateRegistrate;
+import net.Dispatcher.foundation.util.AllDispatcherItems;
+import net.Dispatcher.foundation.util.AllMenuTypes;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +18,9 @@ public class DispatcherMod {
 
     public static void commonSetup() {
         DNetworking.register();
+        AllDispatcherItems.register();
+        AllMenuTypes.register();
+        net.Dispatcher.web.WebBootstrap.init();
     }
 
     public static ResourceLocation id(String path) {

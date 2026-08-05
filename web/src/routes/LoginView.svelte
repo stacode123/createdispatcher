@@ -4,12 +4,12 @@
 
 <div class="wrap">
   <div class="card panel">
-    <h1 class="mono">REALISM CONTROL</h1>
+    <h1 class="mono">CREATE DISPATCHER</h1>
     <p class="dim">Timetables and live network operations for this server.</p>
     <a class="discord" href={loginHref}>Sign in with Discord</a>
     <p class="dim small">
       No Discord app configured? An admin can mint a one-time login link with
-      <code>/realism web session &lt;tier&gt;</code>.
+      <code>/dispatcher web session &lt;tier&gt;</code>.
     </p>
   </div>
 </div>

@@ -2,6 +2,7 @@ package net.Dispatcher;
 
 import dev.architectury.injectables.annotations.ExpectPlatform;
 import io.netty.buffer.Unpooled;
+import net.Dispatcher.foundation.network.*;
 import net.Dispatcher.foundation.util.C2SPacket;
 import net.Dispatcher.foundation.util.S2CPacket;
 import net.minecraft.client.Minecraft;
@@ -135,6 +136,42 @@ public class DNetworking {
         registerS2C(
                 CheckVersionS2CPacket.class,
                 CheckVersionS2CPacket::read
+        );
+        registerC2S(
+                RequestGraphViewPacket.class,
+                RequestGraphViewPacket::read
+        );
+        registerS2C(
+                GraphViewPacket.class,
+                GraphViewPacket::read
+        );
+        registerC2S(
+                AdvancedScheduleSavePacket.class,
+                AdvancedScheduleSavePacket::read
+        );
+        registerC2S(
+                RequestSimulationPacket.class,
+                RequestSimulationPacket::read
+        );
+        registerS2C(
+                SimulationResultPacket.class,
+                SimulationResultPacket::read
+        );
+        registerC2S(
+                PresetListRequestPacket.class,
+                PresetListRequestPacket::read
+        );
+        registerS2C(
+                PresetListPacket.class,
+                PresetListPacket::read
+        );
+        registerC2S(
+                PresetUploadPacket.class,
+                PresetUploadPacket::read
+        );
+        registerC2S(
+                PresetDownloadPacket.class,
+                PresetDownloadPacket::read
         );
     }
 }

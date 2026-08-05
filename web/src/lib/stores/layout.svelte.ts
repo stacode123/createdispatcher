@@ -4,7 +4,7 @@
  * long corridor squeezed into a fixed 180px dock is unreadable — so the splitters remember
  * what you dragged them to, like the folder collapse state does.
  */
-const STORAGE_KEY = 'realism.layout';
+const STORAGE_KEY = 'dispatcher.layout';
 
 export interface Bounds {
   min: number;

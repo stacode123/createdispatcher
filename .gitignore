@@ -27,5 +27,5 @@ web/.vite/
 tmp/
 .vite/
 .architectury-transformer/
-.claude/
+.claude/worktrees/
 CLAUDE.md

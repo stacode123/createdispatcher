@@ -20,7 +20,7 @@ export function setUnauthorizedHandler(handler: () => void) {
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? 'GET';
   const headers = new Headers(init?.headers);
-  if (method !== 'GET' && method !== 'HEAD') headers.set('X-Realism-Csrf', '1');
+  if (method !== 'GET' && method !== 'HEAD') headers.set('X-Dispatcher-Csrf', '1');
   const response = await fetch(path, { ...init, headers });
   if (response.status === 401) {
     onUnauthorized();

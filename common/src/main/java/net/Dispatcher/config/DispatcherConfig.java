@@ -20,6 +20,7 @@ public class DispatcherConfig {
         public final ForgeConfigSpec.IntValue SimMaxWallSeconds;
         public final ForgeConfigSpec.IntValue SimHeadwaySeconds;
         public final ForgeConfigSpec.IntValue SimWaitConflictSeconds;
+        public final ForgeConfigSpec.DoubleValue SimAccelerationMultiplier;
         public final ForgeConfigSpec.BooleanValue SimDebugExport;
         public final ForgeConfigSpec.ConfigValue<java.util.List<? extends String>> SimDiagramHiddenCategories;
         public final ForgeConfigSpec.BooleanValue WebEnabled;
@@ -72,6 +73,8 @@ public class DispatcherConfig {
                     .defineInRange("Sim Headway Seconds", 10, 0, 600);
             SimWaitConflictSeconds = builder.comment("Seconds a simulated train may wait at a red signal before a section conflict is reported; 0 disables wait conflicts")
                     .defineInRange("Sim Wait Conflict Seconds", 30, 0, 600);
+            SimAccelerationMultiplier = builder.comment("Per-carriage acceleration penalty the simulator applies in its 'Standard' phantom-train mode (higher = slower). Create Realism imposes the same penalty on real trains — when it is installed, set this to match its 'Custom Train Acceleration Multiplayer' so simulated departures match what the trains actually do")
+                    .defineInRange("Sim Acceleration Multiplier", 1.0, 0.1, 5.0);
             SimDebugExport = builder.comment("Write a self-contained HTML playback viewer (dispatcher-sim-debug.html in the server/save directory) after every simulation — a debugging tool")
                     .define("Sim Debug Export", false);
             SimDiagramHiddenCategories = builder.comment("Trains whose CRN train category name contains any of these words (case-insensitive) are hidden from the time-distance diagram, e.g. [\"bus\"]")

@@ -9,8 +9,8 @@
  */
 import { MOCK, api, ApiError } from '../api/http';
 
-const COLLAPSE_KEY = 'realism.folders.collapsed';
-const EXTRA_KEY = 'realism.folders.extra';
+const COLLAPSE_KEY = 'dispatcher.folders.collapsed';
+const EXTRA_KEY = 'dispatcher.folders.extra';
 
 export interface FolderGroup<T> {
   /** Full path, "" for the unfiled group. */
