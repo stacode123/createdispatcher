@@ -6,12 +6,12 @@ import com.simibubi.create.content.trains.entity.Train;
 import com.simibubi.create.content.trains.entity.TravellingPoint;
 import com.simibubi.create.content.trains.station.GlobalStation;
 import net.Dispatcher.config.DispatcherConfig;
+import net.Dispatcher.content.simulator.ScheduleCompiler;
 import net.Dispatcher.content.simulator.SimTopology;
 import net.Dispatcher.web.graph.WebGraphStore;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.players.GameProfileCache;
-import net.minecraft.world.level.GameRules;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,10 +31,15 @@ public final class LiveTrainSampler {
     /** A train standing at a station this frame — rolled-through waypoints never qualify. */
     public record StationStop(UUID trainId, UUID stationId) {}
 
-    /** {@code owner} is the resolved player name, "" when absent or unresolvable. */
+    /**
+     * {@code owner} is the resolved player name, "" when absent or unresolvable.
+     * {@code line} and {@code category} are the CRN travel section the train is
+     * currently inside, "" without CRN or outside a section.
+     */
     public record RosterEntry(UUID id, String name, UUID graphId, double length, int carriages,
                               boolean doubleEnded, String state, String scheduleTitle,
-                              String destination, String currentStation, String owner) {}
+                              String destination, String currentStation, String owner,
+                              String line, String category) {}
 
     public static final class Frame {
         public final long gameTick;
@@ -102,6 +107,11 @@ public final class LiveTrainSampler {
         List<RosterEntry> entries = new ArrayList<>();
         int hash = 1;
 
+        // Resolved once per sample, not per train: both are small map builds
+        // over CRN's settings, and this runs on the server thread.
+        Map<String, String> lineNames = net.Dispatcher.compat.CrnCompat.trainLineNames();
+        Map<String, String> categoryNames = net.Dispatcher.compat.CrnCompat.trainCategoryNames();
+
         java.util.Set<UUID> present = new java.util.HashSet<>();
         for (Train train : Create.RAILWAYS.sided(server.overworld()).trains.values()) {
             if (train.graph == null || train.carriages.isEmpty()) continue;
@@ -131,7 +141,8 @@ public final class LiveTrainSampler {
             if (currentStation != null && Math.abs(train.speed) < 0.05)
                 stops.add(new StationStop(train.id, currentStation.id));
 
-            RosterEntry rosterEntry = describe(train, currentStation, ownerName(server, train.owner));
+            RosterEntry rosterEntry = describe(train, currentStation, ownerName(server, train.owner),
+                    lineNames, categoryNames);
             entries.add(rosterEntry);
             hash = 31 * hash + rosterEntry.hashCode();
         }
@@ -144,11 +155,10 @@ public final class LiveTrainSampler {
             rosterVersion++;
         }
 
-        boolean daylight = server.overworld().getGameRules().getBoolean(GameRules.RULE_DAYLIGHT);
         Frame frame = new Frame(
                 server.overworld().getGameTime(),
                 server.overworld().getDayTime(),
-                daylight ? 1 : 0,
+                net.Dispatcher.content.simulator.DayTimeClocks.currentRate(server.overworld()),
                 System.currentTimeMillis(),
                 store.versionMap(),
                 List.copyOf(positions),
@@ -178,7 +188,9 @@ public final class LiveTrainSampler {
         return name;
     }
 
-    private static RosterEntry describe(Train train, GlobalStation current, String owner) {
+    private static RosterEntry describe(Train train, GlobalStation current, String owner,
+                                        Map<String, String> lineNames,
+                                        Map<String, String> categoryNames) {
         double length = 2;
         for (var carriage : train.carriages) length += carriage.bogeySpacing;
         for (int spacing : train.carriageSpacing) length += spacing;
@@ -195,9 +207,13 @@ public final class LiveTrainSampler {
         String title = train.runtime.getSchedule() != null && train.runtime.currentTitle != null
                 ? train.runtime.currentTitle : "";
 
+        net.minecraft.nbt.CompoundTag section = ScheduleCompiler.travelSectionAt(
+                train.runtime.getSchedule(), train.runtime.currentEntry);
+
         return new RosterEntry(train.id, train.name.getString(), train.graph.id, Math.round(length * 10) / 10.0,
                 train.carriages.size(), train.doubleEnded, state, title,
                 destination != null ? destination.name : "", current != null ? current.name : "",
-                owner);
+                owner, ScheduleCompiler.lineName(section, lineNames),
+                ScheduleCompiler.categoryName(section, categoryNames));
     }
 }

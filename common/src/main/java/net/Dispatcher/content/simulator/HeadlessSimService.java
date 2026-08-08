@@ -7,7 +7,6 @@ import net.Dispatcher.content.simulator.core.SimGraph;
 import net.Dispatcher.content.simulator.core.SimResult;
 import net.Dispatcher.content.simulator.core.SimTrainSpec;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.GameRules;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -112,9 +111,7 @@ public final class HeadlessSimService {
         }
         if (!planner.schedules().isEmpty())
             applyOverrides(specs, excluded, planner.schedules(), overrideIssues);
-        boolean daylight = level.getGameRules().getBoolean(GameRules.RULE_DAYLIGHT);
-        SimClock clock = new SimClock(startDayTime != null ? startDayTime : level.getDayTime(),
-                daylight ? 1 : 0);
+        SimClock clock = DayTimeClocks.resolve(level, startDayTime != null ? startDayTime : level.getDayTime());
         return new Prepared(simGraph, List.copyOf(specs), clock,
                 (long) horizonHours * TICKS_PER_HOUR, level.getGameTime(), List.copyOf(excluded),
                 net.Dispatcher.compat.CrnCompat.departureSeeds(), List.copyOf(removed));

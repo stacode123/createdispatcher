@@ -413,6 +413,7 @@ public final class WebServer {
         ctx("/api/notifications", this::handleNotifications);
         ctx("/api/replays", this::handleReplays);
         ctx("/api/stations", this::handleStations);
+        ctx("/api/station-tags", this::handleStationTags);
         ctx("/api/corridor/actual", this::handleCorridorActual);
         ctx("/api/corridor/plan", this::handleCorridorPlan);
         ctx("/api/presets", this::handlePresets);
@@ -678,6 +679,33 @@ public final class WebServer {
         body.addProperty("graphId", entry.id().toString());
         body.addProperty("graphVersion", entry.version());
         body.add("groups", groups);
+        JsonHttp.json(exchange, 200, body);
+    }
+
+    /**
+     * CRN station tags across every network: tag name -> tagged platform names.
+     */
+    private void handleStationTags(HttpExchange exchange) throws IOException {
+        WebAuth.Session session = auth.require(exchange, Tier.VIEWER);
+        if (session == null) return;
+        java.util.Map<String, java.util.List<String>> byTag =
+                new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (java.util.Map.Entry<String, String> e : stationGroups.entrySet())
+            byTag.computeIfAbsent(e.getValue(), k -> new java.util.ArrayList<>()).add(e.getKey());
+        for (java.util.List<String> stations : byTag.values())
+            stations.sort(String.CASE_INSENSITIVE_ORDER);
+        JsonArray tags = new JsonArray();
+        for (java.util.Map.Entry<String, java.util.List<String>> e : byTag.entrySet()) {
+            JsonObject item = new JsonObject();
+            item.addProperty("tag", e.getKey());
+            JsonArray platforms = new JsonArray();
+            for (String station : e.getValue())
+                platforms.add(station);
+            item.add("stations", platforms);
+            tags.add(item);
+        }
+        JsonObject body = new JsonObject();
+        body.add("tags", tags);
         JsonHttp.json(exchange, 200, body);
     }
 
@@ -1200,56 +1228,113 @@ public final class WebServer {
      * organization), {@code PATCH {trainId, folder}} files one train and
      * {@code PATCH {from, to}} re-files a whole folder subtree — both planner-only. Blank
      * folders unfile. Nothing here touches Create, so it runs on the HTTP thread.
+     *
+     * <p>{@code PATCH {autoSort:true}} is the deployer-only exception to the planner gate: it
+     * re-files the whole roster from each train's CRN category and line. The body's
+     * {@code overwrite} flag decides whether the reorg replaces every folder
+     * ({@code true}, trains without a category get unfiled) or only files trains that are
+     * currently unfiled ({@code false}, a manual filing is never moved).
      */
     private void handleTrainFolders(HttpExchange exchange) throws IOException {
         boolean mutating = isMutation(exchange);
-        WebAuth.Session session = auth.require(exchange, mutating ? Tier.PLANNER : Tier.VIEWER);
+        if (!mutating) {
+            WebAuth.Session session = auth.require(exchange, Tier.VIEWER);
+            if (session == null) return;
+            MinecraftServer server = minecraftServer;
+            if (server == null) {
+                JsonHttp.error(exchange, 503, "server_not_ready", null);
+                return;
+            }
+            JsonObject folders = new JsonObject();
+            net.Dispatcher.web.folder.TrainFolders.of(server).snapshot()
+                    .forEach((id, folder) -> folders.addProperty(id.toString(), folder));
+            JsonObject body = new JsonObject();
+            body.add("folders", folders);
+            JsonHttp.json(exchange, 200, body);
+            return;
+        }
+
+        if (!exchange.getRequestMethod().equals("PATCH")) {
+            JsonHttp.error(exchange, 405, "method_not_allowed", null);
+            return;
+        }
+        JsonObject body = parseBody(exchange);
+        if (body == null) return;
+        boolean autoSort = body.has("autoSort") && body.get("autoSort").getAsBoolean();
+        WebAuth.Session session = auth.require(exchange, autoSort ? Tier.DEPLOYER : Tier.PLANNER);
         if (session == null) return;
-        if (mutating && !rateOk(exchange, session, "write", RATE_WRITE)) return;
+        if (!rateOk(exchange, session, "write", RATE_WRITE)) return;
         MinecraftServer server = minecraftServer;
         if (server == null) {
             JsonHttp.error(exchange, 503, "server_not_ready", null);
             return;
         }
         net.Dispatcher.web.folder.TrainFolders store = net.Dispatcher.web.folder.TrainFolders.of(server);
-        switch (exchange.getRequestMethod()) {
-            case "GET", "HEAD" -> {
-                JsonObject folders = new JsonObject();
-                store.snapshot().forEach((id, folder) -> folders.addProperty(id.toString(), folder));
-                JsonObject body = new JsonObject();
-                body.add("folders", folders);
-                JsonHttp.json(exchange, 200, body);
-            }
-            case "PATCH" -> {
-                JsonObject body = parseBody(exchange);
-                if (body == null) return;
-                try {
-                    JsonObject result = new JsonObject();
-                    if (body.has("from")) {
-                        int moved = store.moveFolder(body.get("from").getAsString(),
-                                body.has("to") ? body.get("to").getAsString() : "");
-                        result.addProperty("moved", moved);
-                    } else if (body.has("trainId")) {
-                        UUID trainId = parseUuid(body.get("trainId").getAsString());
-                        if (trainId == null) {
-                            JsonHttp.error(exchange, 400, "bad_train", "trainId must be a train uuid");
-                            return;
-                        }
-                        result.addProperty("folder", store.set(trainId,
-                                body.has("folder") ? body.get("folder").getAsString() : ""));
-                    } else {
-                        JsonHttp.error(exchange, 400, "bad_patch",
-                                "expected {trainId, folder} or {from, to}");
-                        return;
-                    }
-                    JsonHttp.json(exchange, 200, result);
-                } catch (net.Dispatcher.content.trains.schedule.presets.PresetStore.PresetException e) {
-                    JsonHttp.error(exchange, 400, e.key, e.getMessage());
-                } catch (IllegalStateException | ClassCastException e) {
-                    JsonHttp.error(exchange, 400, "bad_body", "malformed folder patch");
+        try {
+            JsonObject result = new JsonObject();
+            if (autoSort) {
+                boolean overwrite = body.has("overwrite") && body.get("overwrite").getAsBoolean();
+                result.addProperty("changed", autoSortTrains(store, overwrite));
+            } else if (body.has("from")) {
+                int moved = store.moveFolder(body.get("from").getAsString(),
+                        body.has("to") ? body.get("to").getAsString() : "");
+                result.addProperty("moved", moved);
+            } else if (body.has("trainId")) {
+                UUID trainId = parseUuid(body.get("trainId").getAsString());
+                if (trainId == null) {
+                    JsonHttp.error(exchange, 400, "bad_train", "trainId must be a train uuid");
+                    return;
                 }
+                result.addProperty("folder", store.set(trainId,
+                        body.has("folder") ? body.get("folder").getAsString() : ""));
+            } else {
+                JsonHttp.error(exchange, 400, "bad_patch",
+                        "expected {trainId, folder}, {from, to}, or {autoSort}");
+                return;
             }
-            default -> JsonHttp.error(exchange, 405, "method_not_allowed", null);
+            JsonHttp.json(exchange, 200, result);
+        } catch (net.Dispatcher.content.trains.schedule.presets.PresetStore.PresetException e) {
+            JsonHttp.error(exchange, 400, e.key, e.getMessage());
+        } catch (IllegalStateException | ClassCastException e) {
+            JsonHttp.error(exchange, 400, "bad_body", "malformed folder patch");
+        }
+    }
+
+    /**
+     * Builds the {@code {trainUuid: folder}} target map from the sampler's live roster —
+     * each entry already carries its CRN category and line display names. A category
+     * folders the train, a line nests under it, and no category unfiles the train
+     * (overwrite) or leaves it alone (gap-fill). Names that fail the folder sanitizer
+     * (too long, control characters) are treated as unfiled rather than failing the whole
+     * reorg. {@code sampler.roster()} is an immutable snapshot, so this is safe off the
+     * server thread.
+     */
+    private int autoSortTrains(net.Dispatcher.web.folder.TrainFolders store, boolean overwrite)
+            throws net.Dispatcher.content.trains.schedule.presets.PresetStore.PresetException {
+        java.util.List<LiveTrainSampler.RosterEntry> roster = sampler.roster();
+        java.util.Map<UUID, String> current = overwrite ? java.util.Map.of() : store.snapshot();
+        java.util.Map<UUID, String> targets = new java.util.HashMap<>();
+        for (LiveTrainSampler.RosterEntry entry : roster) {
+            String category = entry.category() == null ? "" : entry.category().trim();
+            String line = entry.line() == null ? "" : entry.line().trim();
+            String candidate = category.isEmpty() ? "" : line.isEmpty() ? category : category + "/" + line;
+            if (overwrite) {
+                targets.put(entry.id(), sanitized(candidate));
+            } else if (category.isEmpty()) {
+                continue;
+            } else if (current.getOrDefault(entry.id(), "").isEmpty()) {
+                targets.put(entry.id(), sanitized(candidate));
+            }
+        }
+        return store.bulkSet(targets);
+    }
+
+    /** Folder path, or "" when the names are too long/illegal for a folder. */
+    private static String sanitized(String folder) {
+        try {
+            return net.Dispatcher.content.trains.schedule.presets.PresetStore.normalizeFolder(folder);
+        } catch (net.Dispatcher.content.trains.schedule.presets.PresetStore.PresetException e) {
+            return "";
         }
     }
 

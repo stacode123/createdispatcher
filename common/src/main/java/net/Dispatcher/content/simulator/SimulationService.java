@@ -15,7 +15,6 @@ import net.Dispatcher.foundation.network.SimulationResultPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.GameRules;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -179,11 +178,10 @@ public class SimulationService {
         specs.add(phantom);
         specs.addAll(snapshot.specs());
 
-        boolean daylight = player.serverLevel().getGameRules().getBoolean(GameRules.RULE_DAYLIGHT);
         long dayTime = player.serverLevel().getDayTime();
         long startDayTime = settings.startNow() ? dayTime
                 : nextOccurrence(dayTime, settings.startHour(), settings.startMinute());
-        SimClock clock = new SimClock(startDayTime, daylight ? 1 : 0);
+        SimClock clock = DayTimeClocks.resolve(player.serverLevel(), startDayTime);
 
         long horizonTicks = (long) Math.min(settings.horizonHours(),
                 DispatcherConfig.COMMON.SimMaxHorizonHours.get()) * TICKS_PER_HOUR;

@@ -20,10 +20,10 @@ classes/
 # local deploy script (holds FTP credentials)
 deploy.sh
 
-# web frontend: node tooling ignored; built web/dist/ IS committed (Gradle/CI stay Node-free)
+# web frontend: node tooling and the build output are ignored (Gradle runs the Vite build itself — see :common:buildWebDist)
 web/node_modules/
 web/.vite/
-!web/dist/
+web/dist/
 
 # scratch + tooling leftovers
 tmp/

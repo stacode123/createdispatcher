@@ -63,6 +63,9 @@ export interface RosterEntry {
   currentStation: string;
   /** Owning player's name — '' when the train has no owner, or none is known. */
   owner: string;
+  /** CRN travel section the train is currently in — '' without CRN, or outside one. */
+  line: string;
+  category: string;
 }
 
 export interface HelloEvent {

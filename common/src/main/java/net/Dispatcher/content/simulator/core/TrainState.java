@@ -80,20 +80,22 @@ public class TrainState {
     public final List<SimCondition.Separation> departureGates = new ArrayList<>();
     /**
      * Departure slot booked by this column's {@link SimCondition
-     * .TimeOfDayRealistic}, or {@link #UNBOOKED} — Realism's
+     * .TimeOfDayRealistic}, in day time, or {@link #UNBOOKED} — Realism's
      * {@code RealismDepartAt} context tag, cleared with the rest of the
      * column's context on arrival and on completion.
      */
     public long[] columnDepartAt;
     /**
-     * Slot this train last departed on (Realism's {@code lastDepartureSlot}),
-     * or {@link #UNBOOKED}: carries across stops, and is what keeps a
-     * timetable moving forward instead of re-basing on every arrival.
+     * Day time this train last departed on (Realism's
+     * {@code lastDepartureDayTime}), or {@link #UNBOOKED}: carries across
+     * stops, and is what keeps a timetable moving forward instead of
+     * re-basing on every arrival.
      */
     public long lastDepartureSlot = UNBOOKED;
 
     public UUID currentStationId;
     public String currentStationName = "";
+    /** Tick (not day time) the train started waiting at its current stop, or -1 if never. */
     public long arrivalTick = -1;
 
     public boolean signalWaiting;

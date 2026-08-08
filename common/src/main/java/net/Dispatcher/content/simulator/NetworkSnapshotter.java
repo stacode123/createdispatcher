@@ -55,8 +55,7 @@ public class NetworkSnapshotter {
         List<SimTrainSpec> specs = new ArrayList<>();
         List<Excluded> excluded = new ArrayList<>();
         for (Train train : trains) {
-            SimTrainSpec spec = snapshotTrain(train, topology, excluded, observedSpeedFloors,
-                    level.getGameTime());
+            SimTrainSpec spec = snapshotTrain(train, topology, excluded, observedSpeedFloors);
             if (spec != null)
                 specs.add(spec);
         }
@@ -64,8 +63,7 @@ public class NetworkSnapshotter {
     }
 
     private static SimTrainSpec snapshotTrain(Train train, SimTopology topology, List<Excluded> excluded,
-                                              java.util.Map<java.util.UUID, Double> observedSpeedFloors,
-                                              long gameTime) {
+                                              java.util.Map<java.util.UUID, Double> observedSpeedFloors) {
         String name = train.name.getString();
         TravellingPoint head = train.carriages.get(0).getLeadingPoint();
         if (head.node1 == null || head.node2 == null || head.edge == null) {
@@ -178,10 +176,10 @@ public class NetworkSnapshotter {
                         ? runtime.conditionContext.get(i) : new CompoundTag();
                 spec.startColumnElapsed[i] = context.getInt("Time");
                 // Realism's booked departure slot, read by NBT key like every
-                // other optional-mod integration here — absolute game time,
-                // so it moves into the engine's tick 0 = now frame.
+                // other optional-mod integration here — absolute day time,
+                // the same frame SimClock uses, so no conversion needed.
                 spec.startColumnDepartAt[i] = context.contains("RealismDepartAt", Tag.TAG_LONG)
-                        ? context.getLong("RealismDepartAt") - gameTime
+                        ? context.getLong("RealismDepartAt")
                         : TrainState.UNBOOKED;
             }
         } else if (train.navigation != null && train.navigation.destination != null) {

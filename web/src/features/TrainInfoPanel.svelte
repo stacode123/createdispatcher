@@ -24,6 +24,8 @@
     <div class="rows mono">
       <div>state <span>{entry?.state.toLowerCase() ?? ''}</span></div>
       <div>speed <span>{Math.round(speed)} km/h</span></div>
+      {#if entry?.line}<div>line <span>{entry.line}</span></div>{/if}
+      {#if entry?.category}<div>category <span>{entry.category}</span></div>{/if}
       {#if entry?.scheduleTitle}<div>schedule <span>{entry.scheduleTitle}</span></div>{/if}
       {#if entry?.destination}<div>to <span>{entry.destination}</span></div>{/if}
       {#if entry?.currentStation}<div>at <span>{entry.currentStation}</span></div>{/if}

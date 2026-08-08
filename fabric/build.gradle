@@ -60,7 +60,7 @@ dependencies {
     modImplementation "dev.architectury:architectury-fabric:$rootProject.architectury_api_version"
 
     // DragonLib's own maven (maven.lounode.top) is unreachable; Modrinth maven, version id = 1.20.1-beta-3.0.28 fabric
-    modImplementation(include("maven.modrinth:dragonlib:uz4tlLzk"))
+    modImplementation("maven.modrinth:dragonlib:uz4tlLzk")
 }
 
 processResources {

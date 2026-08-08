@@ -179,6 +179,50 @@ public class ScheduleCompiler {
     }
 
     /**
+     * The CRN travel-section data tag in effect at {@code entryIndex} of a live
+     * schedule, or null when the train is not inside one. Mirrors how
+     * {@link #compile} carries the identity: a section applies from its own
+     * entry onward, and nothing is carried across a cyclic wrap — entries
+     * before the first travel section have no identity, on every lap.
+     */
+    public static CompoundTag travelSectionAt(Schedule schedule, int entryIndex) {
+        if (schedule == null || schedule.entries == null)
+            return null;
+        CompoundTag section = null;
+        int last = Math.min(entryIndex, schedule.entries.size() - 1);
+        for (int i = 0; i <= last; i++) {
+            ScheduleInstruction instruction = schedule.entries.get(i).instruction;
+            if (instruction != null
+                    && "createrailwaysnavigator:travel_section".equals(instruction.getId().toString()))
+                section = instruction.getData();
+        }
+        return section;
+    }
+
+    /**
+     * A travel section's line as text: the UUID resolved through {@code names}
+     * (see {@code CrnCompat.trainLineNames}), or the literal name legacy data
+     * stores inline. "" when unset or unresolvable — callers display it, so a
+     * raw UUID would be noise.
+     */
+    public static String lineName(CompoundTag data, java.util.Map<String, String> names) {
+        if (data == null)
+            return "";
+        if (data.hasUUID("TrainLine"))
+            return names.getOrDefault(data.getUUID("TrainLine").toString(), "");
+        return data.getString("TrainLine");
+    }
+
+    /** The same for the section's category; legacy data stores it as "TrainGroup". */
+    public static String categoryName(CompoundTag data, java.util.Map<String, String> names) {
+        if (data == null)
+            return "";
+        if (data.hasUUID("TrainCategory"))
+            return names.getOrDefault(data.getUUID("TrainCategory").toString(), "");
+        return data.getString("TrainGroup");
+    }
+
+    /**
      * CRN {@code TravelSectionInstruction} line reference as a comparison
      * token: modern data stores the line UUID, legacy data the line name —
      * CRN maps names via {@code TrainLine.genMD5Uuid} (UUID v3 of the UTF-8

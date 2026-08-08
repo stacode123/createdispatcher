@@ -22,7 +22,21 @@ export interface FolderGroup<T> {
   collapsed: boolean;
   /** Anything filed at or under this path — false for a folder that is still empty. */
   hasItems: boolean;
+  /** Whether this folder holds real content independent of the current filter. */
+  hasContent: boolean;
+  /** Nested folders directly under this one, in display order. */
+  children: FolderGroup<T>[];
 }
+
+/**
+ * One renderable row of the folder tree: a folder header, or the direct items of one
+ * folder. Headers are emitted depth-first with a folder's own items after its entire
+ * subtree, so opening a folder shows its nested folders on top and its direct items
+ * underneath them.
+ */
+export type FolderRow<T> =
+  | { kind: 'folder'; path: string; label: string; depth: number; collapsed: boolean; hasItems: boolean; hasContent: boolean }
+  | { kind: 'items'; path: string; depth: number; items: T[] };
 
 /** Splits a path into its segments, ignoring empties. */
 export function segments(path: string): string[] {
@@ -201,6 +215,32 @@ class FolderStore {
     }
   }
 
+  /**
+   * Deployer-only: ask the server to re-file the roster from each train's CRN category
+   * and line. {@code overwrite} false only files currently-unfiled trains; true replaces
+   * every folder (and unfiles trains without a category). Returns the number changed.
+   */
+  async autoSortTrains(overwrite: boolean): Promise<number> {
+    if (MOCK) return 0;
+    this.ui.busy = true;
+    this.ui.error = '';
+    try {
+      const dto = await api<{ changed: number }>('/api/train-folders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autoSort: true, overwrite }),
+      });
+      const changed = dto.changed ?? 0;
+      await this.refresh(true);
+      return changed;
+    } catch (e) {
+      this.ui.error = e instanceof ApiError ? e.key : 'network error';
+      return 0;
+    } finally {
+      this.ui.busy = false;
+    }
+  }
+
   isCollapsed(scope: 'p' | 't', path: string): boolean {
     return this.ui.collapsed.includes(scope + ':' + path);
   }
@@ -218,12 +258,27 @@ class FolderStore {
   }
 
   /**
-   * Groups items by folder path, alphabetically, unfiled last. Ancestor headers are
-   * synthesized so a lone "A/B/C" still shows its A and B rows; collapsing any ancestor
-   * hides the whole subtree. Declared-but-empty folders get a header too — that is what
-   * makes them droppable.
+   * Groups items by folder path, alphabetically, unfiled last, and flattens the tree into
+   * render rows. Ancestor headers are synthesized so a lone "A/B/C" still shows its A and B
+   * rows; collapsing any ancestor hides the whole subtree. Declared-but-empty folders get a
+   * header too — that is what makes them droppable.
+   *
+   * Rows are depth-first with each folder's direct items after its entire subtree, so an
+   * opened folder lists its nested folders on top and its own items underneath them.
+   *
+   * `items` is expected to already be search/text-filtered by the caller. Pass
+   * `searching: true` while a search is active: a folder with nothing matching in it (no
+   * direct hit and no matching descendant) is dropped rather than shown empty, and every
+   * remaining folder is forced open — a match three folders deep is useless if you still
+   * have to expand each ancestor by hand to see it.
    */
-  group<T>(scope: 'p' | 't', items: T[], folderOf: (item: T) => string): FolderGroup<T>[] {
+  group<T>(
+    scope: 'p' | 't',
+    items: T[],
+    folderOf: (item: T) => string,
+    opts?: { searching?: boolean },
+  ): FolderRow<T>[] {
+    const searching = opts?.searching ?? false;
     const byPath = new Map<string, T[]>();
     for (const item of items) {
       const path = normalizeFolder(folderOf(item));
@@ -231,38 +286,107 @@ class FolderStore {
       if (bucket) bucket.push(item);
       else byPath.set(path, [item]);
     }
-    const filled = [...byPath.entries()].filter(([path, list]) => path !== '' && list.length).map(([path]) => path);
     const paths = new Set<string>(byPath.keys());
-    for (const declared of this.ui.extra[scope]) if (declared) paths.add(declared);
+    // A declared-but-empty folder is a drop target while browsing, but while searching it
+    // has nothing that could match, so it would only ever show up as noise.
+    if (!searching) for (const declared of this.ui.extra[scope]) if (declared) paths.add(declared);
     // every ancestor of a used path needs a header of its own
     for (const path of [...paths]) {
       const parts = segments(path);
       for (let i = 1; i < parts.length; i++) paths.add(parts.slice(0, i).join('/'));
     }
-    const sorted = [...paths].sort((a, b) => {
-      if (a === '') return 1; // unfiled sinks to the bottom
-      if (b === '') return -1;
-      return a.localeCompare(b);
-    });
-    const groups: FolderGroup<T>[] = [];
-    let hiddenUnder: string | null = null;
-    for (const path of sorted) {
-      // a collapsed ancestor swallows its descendants
-      if (hiddenUnder !== null && path.startsWith(hiddenUnder + '/')) continue;
-      hiddenUnder = null;
+
+    const nodes = new Map<string, FolderGroup<T>>();
+    const nodeFor = (path: string): FolderGroup<T> => {
+      let node = nodes.get(path);
+      if (node) return node;
       const parts = segments(path);
-      const collapsed = this.isCollapsed(scope, path);
-      groups.push({
+      node = {
         path,
         label: parts.length ? parts[parts.length - 1] : 'Unfiled',
         depth: Math.max(0, parts.length - 1),
-        items: collapsed ? [] : (byPath.get(path) ?? []),
-        collapsed,
-        hasItems: path === '' || filled.some((p) => p === path || p.startsWith(path + '/')),
-      });
-      if (collapsed && path !== '') hiddenUnder = path;
+        items: [],
+        collapsed: false,
+        hasItems: false,
+        hasContent: false,
+        children: [],
+      };
+      nodes.set(path, node);
+      return node;
+    };
+
+    const roots: FolderGroup<T>[] = [];
+    for (const path of paths) {
+      const node = nodeFor(path);
+      node.items = byPath.get(path) ?? [];
+      node.collapsed = searching ? false : this.isCollapsed(scope, path);
+      const parts = segments(path);
+      const parent = nodeFor(parts.slice(0, parts.length - 1).join('/'));
+      if (parent.path === '') roots.push(node);
+      else parent.children.push(node);
     }
-    return groups;
+
+    const byFullPath = (a: FolderGroup<T>, b: FolderGroup<T>) => {
+      if (a.path === '') return 1; // unfiled sinks to the bottom
+      if (b.path === '') return -1;
+      return a.path.localeCompare(b.path);
+    };
+    const sortTree = (node: FolderGroup<T>) => {
+      node.children.sort(byFullPath);
+      for (const child of node.children) sortTree(child);
+    };
+    roots.sort(byFullPath);
+    for (const root of roots) sortTree(root);
+
+    const computeHasItems = (node: FolderGroup<T>): boolean => {
+      let anyChild = false;
+      for (const child of node.children) if (computeHasItems(child)) anyChild = true;
+      node.hasItems = node.path === '' || node.items.length > 0 || anyChild;
+      return node.hasItems;
+    };
+    for (const root of roots) computeHasItems(root);
+
+    // hasItems reflects the filter-passed items (a folder wiped out by the schedule/search
+    // filter would otherwise look empty). hasContent reflects what the folder really holds —
+    // every filed train for trains, the passed items for presets — so "drag … here" only ever
+    // shows on a folder that is genuinely empty, not merely filtered out of view.
+    const contentPaths = new Set<string>();
+    if (scope === 't') {
+      for (const path of Object.values(this.ui.trains)) if (path) contentPaths.add(normalizeFolder(path));
+    } else {
+      for (const [path, list] of byPath) if (path && list.length) contentPaths.add(path);
+    }
+    const computeHasContent = (node: FolderGroup<T>): boolean => {
+      if (node.path === '') return node.hasContent = true;
+      const prefix = node.path + '/';
+      let any = false;
+      for (const p of contentPaths)
+        if (p === node.path || p.startsWith(prefix)) { any = true; break; }
+      return node.hasContent = any;
+    };
+    for (const root of roots) computeHasContent(root);
+
+    const rows: FolderRow<T>[] = [];
+    const emit = (node: FolderGroup<T>) => {
+      // no direct match and no matching descendant — this folder is a dead end for the search
+      if (searching && node.path !== '' && !node.hasItems) return;
+      rows.push({
+        kind: 'folder',
+        path: node.path,
+        label: node.label,
+        depth: node.depth,
+        collapsed: node.collapsed,
+        hasItems: node.hasItems,
+        hasContent: node.hasContent,
+      });
+      // a collapsed ancestor swallows its descendants
+      if (node.collapsed) return;
+      for (const child of node.children) emit(child);
+      if (node.items.length)
+        rows.push({ kind: 'items', path: node.path, depth: node.depth, items: node.items });
+    };
+    for (const root of roots) emit(root);
+    return rows;
   }
 
   /** Every folder path in use, for the datalists that back the folder inputs. */

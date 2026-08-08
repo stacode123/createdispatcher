@@ -141,6 +141,37 @@ public final class TrainFolders {
         return updates.size();
     }
 
+    /**
+     * Applies many targets in one pass (the deployer auto-sort button): each entry's
+     * value becomes its folder path, a blank value unfiling it. A folder already holding
+     * its target stays untouched. Persists and notifies once for the whole batch, not
+     * once per train, so a large reorg is one write and one SSE broadcast.
+     *
+     * @return how many trains actually changed
+     */
+    public synchronized int bulkSet(Map<UUID, String> targets) throws PresetStore.PresetException {
+        if (targets.isEmpty())
+            return 0;
+        int changed = 0;
+        for (Map.Entry<UUID, String> target : targets.entrySet()) {
+            String normalized = PresetStore.normalizeFolder(target.getValue());
+            if (normalized.isEmpty()) {
+                if (folders.remove(target.getKey()) != null)
+                    changed++;
+            } else if (!normalized.equals(folders.get(target.getKey()))) {
+                folders.put(target.getKey(), normalized);
+                changed++;
+            }
+        }
+        if (changed > 0) {
+            if (folders.size() > MAX_ENTRIES)
+                throw new PresetStore.PresetException("folders_full", "too many filed trains");
+            persist();
+            fireChanged();
+        }
+        return changed;
+    }
+
     private void persist() {
         JsonObject entries = new JsonObject();
         folders.forEach((id, folder) -> entries.addProperty(id.toString(), folder));

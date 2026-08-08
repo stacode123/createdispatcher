@@ -38,71 +38,34 @@ test {
     }
 }
 
-// The committed frontend build (web/dist) ships inside the jar; the embedded web server serves it
-// from assets/createdispatcher/web/. Gradle/CI stay Node-free — rebuild it with: cd web && npm run build
+// The frontend (web/dist) is a build-time artifact now: Gradle runs the Vite build itself, so
+// the jar always ships a fresh UI and web/dist is gitignored (no more committing it by hand).
+// npmCi installs the locked dependency set; buildWebDist compiles the sources into dist/, which
+// processResources below copies into the jar.
+tasks.register("npmCi", Exec) {
+    group = "build"
+    description = "npm ci in web/ — installs the locked frontend dependencies"
+
+    workingDir = rootProject.file("web")
+    def npm = System.getProperty("os.name").toLowerCase().contains("windows") ? "npm.cmd" : "npm"
+    commandLine(npm, "ci")
+}
+
+tasks.register("buildWebDist", Exec) {
+    group = "build"
+    description = "npm run build in web/ — compiles the frontend to web/dist"
+    dependsOn "npmCi"
+
+    // No inputs/outputs: Vite emits content-hashed filenames, so an up-to-date check would
+    // constantly re-run anyway — and "always rebuild" is the freshness guarantee we want.
+    workingDir = rootProject.file("web")
+    def npm = System.getProperty("os.name").toLowerCase().contains("windows") ? "npm.cmd" : "npm"
+    commandLine(npm, "run", "build")
+}
+
 processResources {
+    dependsOn buildWebDist
     from(rootProject.file("web/dist")) {
         into "assets/createdispatcher/web"
     }
 }
-
-/**
- * Honesty check for the committed frontend build: web/dist is a build artifact Gradle cannot
- * regenerate (no Node here, by design), so this recomputes the source digest that
- * `npm run build` recorded in dist/.buildinfo.json and says so when the sources have moved on.
- * Pure Groovy — the digest recipe is mirrored in web/vite.config.ts and the two must match.
- * Warns locally; fails when CI is set, so a stale dist can never be released.
- */
-tasks.register("verifyWebDist") {
-    group = "verification"
-    description = "Checks that the committed web/dist matches the sources in web/"
-
-    def webDir = rootProject.file("web")
-    def sourceDir = new File(webDir, "src")
-    def extraFiles = ["index.html", "package.json", "tsconfig.json", "vite.config.ts"]
-    def buildInfo = new File(webDir, "dist/.buildinfo.json")
-
-    inputs.dir(sourceDir).withPathSensitivity(PathSensitivity.RELATIVE)
-    extraFiles.each { inputs.file(new File(webDir, it)) }
-    inputs.files(project.files(buildInfo))
-    outputs.upToDateWhen { false }
-
-    doLast {
-        def strict = System.getenv("CI") != null
-        def complain = { String message ->
-            if (strict) throw new GradleException(message)
-            logger.warn("WARNING: " + message)
-        }
-        if (!buildInfo.isFile()) {
-            complain("web/dist/.buildinfo.json is missing — run 'cd web && npm run build' and commit dist/")
-            return
-        }
-
-        def files = []
-        sourceDir.eachFileRecurse(groovy.io.FileType.FILES) { files << it }
-        extraFiles.each { files << new File(webDir, it) }
-        def relative = files.collect { webDir.toPath().relativize(it.toPath()).toString().replace('\\', '/') }.sort()
-
-        def total = java.security.MessageDigest.getInstance("SHA-256")
-        relative.each { path ->
-            def each = java.security.MessageDigest.getInstance("SHA-256")
-            each.update(new File(webDir, path).bytes)
-            total.update(path.getBytes("UTF-8"))
-            total.update((byte) 10)
-            total.update(each.digest().encodeHex().toString().getBytes("UTF-8"))
-            total.update((byte) 10)
-        }
-        def actual = total.digest().encodeHex().toString()
-        def recorded = (buildInfo.text =~ /"sourceDigest"\s*:\s*"([0-9a-f]{64})"/)
-        if (!recorded) {
-            complain("web/dist/.buildinfo.json has no sourceDigest — rebuild the frontend")
-            return
-        }
-        if (recorded[0][1] != actual)
-            complain("web/dist is stale: web/ sources changed since the last 'npm run build'. "
-                    + "Run 'cd web && npm run build' and commit dist/ (recorded "
-                    + recorded[0][1].substring(0, 12) + ", sources " + actual.substring(0, 12) + ")")
-    }
-}
-
-tasks.named("check") { dependsOn("verifyWebDist") }

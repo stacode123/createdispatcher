@@ -36,6 +36,8 @@ export async function startMockLive() {
     destination: '',
     currentStation: '',
     owner: i % 3 === 0 ? '' : `driver${(i % 4) + 1}`,
+    line: `S${(i % 3) + 1}`,
+    category: i % 2 === 0 ? 'Regional' : 'Express',
   }));
   liveTrains.setRoster(roster, 1);
 

@@ -78,6 +78,28 @@ public class CrnCompat {
         return names;
     }
 
+    /** Train line id → display name, from CRN's server-side settings. */
+    public static Map<String, String> trainLineNames() {
+        if (!crnLoaded)
+            return Map.of();
+        try {
+            return trainLineNamesImpl();
+        } catch (Throwable t) {
+            DispatcherMod.LOGGER.error("Failed to read CRN train lines", t);
+            return Map.of();
+        }
+    }
+
+    private static Map<String, String> trainLineNamesImpl() {
+        if (!GlobalSettings.hasInstance())
+            return Map.of();
+        Map<String, String> names = new HashMap<>();
+        for (de.mrjulsen.crn.data.TrainLine line
+                : GlobalSettings.getInstance().getAllTrainLines())
+            names.put(line.getId().toString(), line.getLineName());
+        return names;
+    }
+
     /**
      * One station's CRN departure history, absolute overworld game ticks
      * (0 = never). Line/category keys are their UUIDs as strings — the same

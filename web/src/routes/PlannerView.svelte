@@ -10,6 +10,7 @@
   import PlaybackBar from '../features/PlaybackBar.svelte';
   import PresetLibrary from '../lib/planner/PresetLibrary.svelte';
   import SimDock from '../lib/planner/SimDock.svelte';
+  import { presets } from '../lib/stores/presets.svelte';
   import { liveTrains } from '../lib/stores/liveTrains.svelte';
   import { graphStore } from '../lib/stores/graphs.svelte';
   import { playback } from '../lib/stores/playback.svelte';
@@ -63,6 +64,8 @@
               currentStation: '',
               // some unowned, to exercise the owner column's fallback
               owner: i % 5 === 2 ? '' : `driver${(i % 4) + 1}`,
+              line: `S${(i % 3) + 1}`,
+              category: i % 2 === 0 ? 'Regional' : 'Express',
             })),
             1,
           );
@@ -83,7 +86,9 @@
             t.name.toLowerCase().includes(query) ||
             t.state.toLowerCase().includes(query) ||
             t.scheduleTitle.toLowerCase().includes(query) ||
-            t.destination.toLowerCase().includes(query),
+            t.destination.toLowerCase().includes(query) ||
+            // the full path covers nested folders too — "Depot/Sub" matches both "depot" and "sub"
+            folders.folderOfTrain(t.id).toLowerCase().includes(query),
         )
       : all;
     // counts come from the text-filtered set, so each button says what it would show
@@ -108,14 +113,17 @@
     };
   });
 
-  const trainGroups = $derived.by(() => {
-    const groups = folders.group('t', list.shown, (train) => folders.folderOfTrain(train.id));
+  const trainRows = $derived.by(() => {
+    const rows = folders.group('t', list.shown, (train) => folders.folderOfTrain(train.id), {
+      searching: filter.trim() !== '',
+    });
     // Mid-drag, Unfiled has to exist as a target even when empty — otherwise a roster where
     // every train is filed offers no way to drag one back out.
-    if (trainDrag && !groups.some((g) => g.path === ''))
-      groups.push({ path: '', label: 'Unfiled', depth: 0, items: [], collapsed: false, hasItems: true });
-    return groups;
+    if (trainDrag && !rows.some((r) => r.kind === 'folder' && r.path === ''))
+      rows.push({ kind: 'folder', path: '', label: 'Unfiled', depth: 0, collapsed: false, hasItems: true, hasContent: true });
+    return rows;
   });
+  const trainFolderCount = $derived(trainRows.filter((r) => r.kind === 'folder').length);
   const knownTrainFolders = $derived(
     folders.known([
       ...liveTrains.ui.roster.map((t) => folders.folderOfTrain(t.id)),
@@ -134,6 +142,40 @@
     newFolderOpen = false;
     newFolderDraft = '';
     if (draft) folders.addFolder('t', draft);
+  }
+
+  /** Deployer-only: whether this session may run the roster's auto-sort. */
+  const canAutoSort = $derived(session.me?.tier === 'deployer');
+
+  /** The auto-sort confirmation popup — the overwrite choice is destructive. */
+  let autoSortOpen = $state(false);
+  let autoSortOverwrite = $state(false);
+  let autoSortBusy = $state(false);
+  let autoSortDone: number | null = $state(null);
+
+  function openAutoSort() {
+    autoSortOverwrite = false;
+    autoSortDone = null;
+    autoSortOpen = true;
+  }
+
+  function closeAutoSort() {
+    if (autoSortBusy) return;
+    autoSortOpen = false;
+    autoSortDone = null;
+  }
+
+  async function runAutoSort() {
+    if (autoSortBusy) return;
+    autoSortBusy = true;
+    autoSortDone = null;
+    try {
+      const changed = await folders.autoSortTrains(autoSortOverwrite);
+      if (changed === 0) autoSortDone = 'nothing to change';
+      else autoSortDone = `filed ${changed} train${changed === 1 ? '' : 's'} by category and line`;
+    } finally {
+      autoSortBusy = false;
+    }
   }
 
   /**
@@ -223,6 +265,62 @@
     return header ? (header.getAttribute('data-train-folder') ?? '') : null;
   }
 
+  /**
+   * Dragging a folder onto another nests it there — the drag-and-drop route to the same
+   * "A/B" path nesting the rename box already does by hand. Mirrors the train-filing drag
+   * above, but the only valid drop targets are folders that are not the dragged folder
+   * itself or one of its own descendants (nesting a folder under its own child is nonsense).
+   */
+  let folderDragCandidate: { path: string; label: string; x: number; y: number } | null = null;
+  let folderDrag = $state<{ path: string; label: string; x: number; y: number } | null>(null);
+  let hoverFolderTarget = $state<string | null>(null);
+  let suppressFolderClick = false;
+
+  function folderPointerDown(e: PointerEvent, path: string) {
+    if (!path || e.button !== 0 || (e.target as HTMLElement).closest('button.delfolder, input')) return;
+    folderDragCandidate = { path, label: path.split('/').pop() ?? path, x: e.clientX, y: e.clientY };
+    suppressFolderClick = false;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function folderPointerMove(e: PointerEvent) {
+    if (!folderDragCandidate) return;
+    if (!folderDrag) {
+      const dist = Math.abs(e.clientX - folderDragCandidate.x)
+        + Math.abs(e.clientY - folderDragCandidate.y);
+      if (dist > 6) folderDrag = { ...folderDragCandidate, x: e.clientX, y: e.clientY };
+    }
+    if (folderDrag) {
+      folderDrag = { ...folderDrag, x: e.clientX, y: e.clientY };
+      const target = trainFolderAt(e.clientX, e.clientY);
+      hoverFolderTarget =
+        target !== null && target !== folderDrag.path && !target.startsWith(folderDrag.path + '/')
+          ? target
+          : null;
+    }
+  }
+
+  function folderPointerUp() {
+    folderDragCandidate = null;
+    if (!folderDrag) return;
+    suppressFolderClick = true;
+    const { path: from, label } = folderDrag;
+    const target = hoverFolderTarget;
+    hoverFolderTarget = null;
+    folderDrag = null;
+    if (target === null) return;
+    const to = target === '' ? label : `${target}/${label}`;
+    if (to === from) return;
+    folders.renameExtra('t', from, to);
+    void folders.renameTrainFolder(from, to);
+  }
+
+  function folderPointerCancel() {
+    folderDragCandidate = null;
+    folderDrag = null;
+    hoverFolderTarget = null;
+  }
+
   const source = $derived(playback.ui.loaded && sims.ui.phase === 'done' ? 'playback' : 'none');
 
   function trainClick(trainId: string) {
@@ -233,6 +331,18 @@
     if (sims.ui.armed) sims.assign(trainId, sims.ui.armed.presetId, sims.ui.armed.name);
   }
 
+  let importingTrain = $state('');
+  let importError = $state('');
+
+  async function importPreset(id: string, fallback: string) {
+    if (importingTrain) return;
+    importingTrain = id;
+    importError = '';
+    const error = await presets.createFromTrain(id, fallback);
+    importingTrain = '';
+    if (error) importError = error;
+  }
+
   function onKey(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       sims.cancelDrag();
@@ -240,6 +350,9 @@
       trainDragCandidate = null;
       trainDrag = null;
       hoverTrainFolder = null;
+      folderDragCandidate = null;
+      folderDrag = null;
+      hoverFolderTarget = null;
     }
   }
 </script>
@@ -284,6 +397,13 @@
             title="new folder — then drag trains onto it to file them"
           >+ folder</button>
         {/if}
+        {#if canAutoSort}
+          <button
+            class="headbtn"
+            onclick={openAutoSort}
+            title="file the whole roster by each train's CRN category, then line"
+          >sort</button>
+        {/if}
       </div>
       {#if newFolderOpen}
         <div class="newfolderrow">
@@ -325,6 +445,9 @@
           title="not running one (paused, completed, manual, derailed) — these stay on the network as obstacles"
         >unscheduled <span class="n">{list.unscheduled}</span></button>
       </div>
+      {#if importError}
+        <div class="imperr mono">{importError}</div>
+      {/if}
       {#if liveTrains.ui.roster.length === 0}
         <div class="empty-state">No trains on this server.</div>
       {:else}
@@ -337,142 +460,167 @@
           {:else if list.total === 0}
             <div class="empty-state">no trains match this filter</div>
           {/if}
-          {#each trainGroups as group (group.path)}
-          {#if group.path !== '' || trainGroups.length > 1}
-            <div
-              class="folder mono"
-              class:droppable={trainDrag != null}
-              class:drop={trainDrag != null && hoverTrainFolder === group.path}
-              data-train-folder={group.path}
-              style="padding-left: {6 + group.depth * 10}px"
-            >
-              <button
-                class="twist"
-                onclick={() => folders.toggle('t', group.path)}
-                title={group.collapsed ? 'expand' : 'collapse'}
-              >{group.collapsed ? '▸' : '▾'}</button>
-              {#if renamingFolder === group.path && group.path !== ''}
-                <input
-                  class="foldername"
-                  use:autofocus
-                  bind:value={folderRenameDraft}
-                  onblur={() => {
-                    const from = renamingFolder;
-                    const to = folderRenameDraft.trim();
-                    renamingFolder = '';
-                    if (from && to && to !== from) {
-                      folders.renameExtra('t', from, to);
-                      void folders.renameTrainFolder(from, to);
-                    }
-                  }}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter') e.currentTarget.blur();
-                    if (e.key === 'Escape') renamingFolder = '';
-                  }}
-                />
-              {:else}
-                <button
-                  class="foldername-btn"
-                  onclick={() => folders.toggle('t', group.path)}
-                  ondblclick={() => {
-                    if (!group.path) return;
-                    renamingFolder = group.path;
-                    folderRenameDraft = group.path;
-                  }}
-                  title={group.path ? `${group.path} — double-click to rename` : 'trains in no folder'}
-                >📁 {group.label}</button>
-                {#if canPlan && group.path !== '' && !group.hasItems}
-                  <button
-                    class="delfolder"
-                    title="remove this empty folder"
-                    onclick={() => folders.removeFolder('t', group.path)}
-                  >×</button>
-                {/if}
-              {/if}
-            </div>
-            {#if group.path !== '' && !group.hasItems && !group.collapsed}
+          {#each trainRows as row (row.kind + ':' + row.path)}
+          {#if row.kind === 'folder'}
+            {#if row.path !== '' || trainFolderCount > 1}
               <div
-                class="dropnote mono"
-                class:drop={trainDrag != null && hoverTrainFolder === group.path}
-                data-train-folder={group.path}
-                style="padding-left: {16 + group.depth * 10}px"
-              >drag trains here</div>
-            {/if}
-          {/if}
-          {#each group.items as train (train.id)}
-            {@const assignment = sims.ui.assignments[train.id]}
-            {@const excepted = sims.isException(train.id)}
-            {@const dropped = !assignment && sims.ui.removeScheduled && !excepted
-              && hasLiveSchedule(train.state)}
-            <div
-              class="train"
-              class:target={sims.ui.drag != null || sims.ui.armed != null}
-              class:removed={dropped || (!sims.ui.removeScheduled && excepted)}
-              style="padding-left: {10 + group.depth * 10}px"
-              data-train-id={train.id}
-              role="button"
-              tabindex="0"
-              onpointerdown={(e) => trainPointerDown(e, train.id, train.name)}
-              onpointermove={trainPointerMove}
-              onpointerup={trainPointerUp}
-              onpointercancel={() => {
-                trainDragCandidate = null;
-                hoverTrainFolder = null;
-                trainDrag = null;
-              }}
-              onclick={() => trainClick(train.id)}
-              onkeydown={(e) => e.key === 'Enter' && trainClick(train.id)}
-            >
-              <div class="row">
-                <span class="name">{train.name}</span>
-                <span class="controls-inline">
-                  {#if canPlan}
+                class="folder mono"
+                class:droppable={trainDrag != null
+                  || (folderDrag != null && row.path !== folderDrag.path
+                    && !row.path.startsWith(folderDrag.path + '/'))}
+                class:drop={(trainDrag != null && hoverTrainFolder === row.path)
+                  || (folderDrag != null && hoverFolderTarget === row.path)}
+                data-train-folder={row.path}
+                style="padding-left: {6 + row.depth * 10}px"
+              >
+                <button
+                  class="twist"
+                  onclick={() => folders.toggle('t', row.path)}
+                  title={row.collapsed ? 'expand' : 'collapse'}
+                >{row.collapsed ? '▸' : '▾'}</button>
+                {#if renamingFolder === row.path && row.path !== ''}
+                  <input
+                    class="foldername"
+                    use:autofocus
+                    bind:value={folderRenameDraft}
+                    onblur={() => {
+                      const from = renamingFolder;
+                      const to = folderRenameDraft.trim();
+                      renamingFolder = '';
+                      if (from && to && to !== from) {
+                        folders.renameExtra('t', from, to);
+                        void folders.renameTrainFolder(from, to);
+                      }
+                    }}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') renamingFolder = '';
+                    }}
+                  />
+                {:else}
+                  <button
+                    class="foldername-btn"
+                    onpointerdown={(e) => folderPointerDown(e, row.path)}
+                    onpointermove={folderPointerMove}
+                    onpointerup={folderPointerUp}
+                    onpointercancel={folderPointerCancel}
+                    onclick={() => {
+                      if (suppressFolderClick) {
+                        suppressFolderClick = false;
+                        return;
+                      }
+                      folders.toggle('t', row.path);
+                    }}
+                    ondblclick={() => {
+                      if (!row.path) return;
+                      renamingFolder = row.path;
+                      folderRenameDraft = row.path;
+                    }}
+                    title={row.path ? `${row.path} — double-click to rename, drag onto another folder to nest it` : 'trains in no folder'}
+                  >📁 {row.label}</button>
+                  {#if canPlan && row.path !== '' && !row.hasContent}
                     <button
-                      class="excl mono"
-                      class:on={excepted}
-                      title={sims.ui.removeScheduled
-                        ? (excepted
-                          ? 'kept: this train keeps running its own schedule'
-                          : 'keep this train running its own schedule')
-                        : (excepted
-                          ? 'removed from the sim'
-                          : 'remove this train from the sim')}
+                      class="delfolder"
+                      title="remove this empty folder"
+                      onclick={() => folders.removeFolder('t', row.path)}
+                    >×</button>
+                  {/if}
+                {/if}
+              </div>
+              {#if row.path !== '' && !row.hasContent && !row.collapsed}
+                <div
+                  class="dropnote mono"
+                  class:drop={trainDrag != null && hoverTrainFolder === row.path}
+                  data-train-folder={row.path}
+                  style="padding-left: {16 + row.depth * 10}px"
+                >drag trains here</div>
+              {/if}
+            {/if}
+          {:else}
+            {#each row.items as train (train.id)}
+              {@const assignment = sims.ui.assignments[train.id]}
+              {@const excepted = sims.isException(train.id)}
+              {@const dropped = !assignment && sims.ui.removeScheduled && !excepted
+                && hasLiveSchedule(train.state)}
+              <div
+                class="train"
+                class:target={sims.ui.drag != null || sims.ui.armed != null}
+                class:removed={dropped || (!sims.ui.removeScheduled && excepted)}
+                style="padding-left: {10 + row.depth * 10}px"
+                data-train-id={train.id}
+                role="button"
+                tabindex="0"
+                onpointerdown={(e) => trainPointerDown(e, train.id, train.name)}
+                onpointermove={trainPointerMove}
+                onpointerup={trainPointerUp}
+                onpointercancel={() => {
+                  trainDragCandidate = null;
+                  hoverTrainFolder = null;
+                  trainDrag = null;
+                }}
+                onclick={() => trainClick(train.id)}
+                onkeydown={(e) => e.key === 'Enter' && trainClick(train.id)}
+              >
+                <div class="row">
+                  <span class="name">{train.name}</span>
+                  <span class="controls-inline">
+                    {#if canPlan}
+                      <button
+                        class="impt mono"
+                        title="import this train's schedule as a preset"
+                        disabled={importingTrain === train.id}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          void importPreset(train.id, train.name);
+                        }}
+                      >{importingTrain === train.id ? '…' : '⤓'}</button>
+                      <button
+                        class="excl mono"
+                        class:on={excepted}
+                        title={sims.ui.removeScheduled
+                          ? (excepted
+                            ? 'kept: this train keeps running its own schedule'
+                            : 'keep this train running its own schedule')
+                          : (excepted
+                            ? 'removed from the sim'
+                            : 'remove this train from the sim')}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          sims.toggleException(train.id);
+                        }}
+                      >{sims.ui.removeScheduled
+                        ? (excepted ? 'kept' : '⊕')
+                        : (excepted ? 'removed' : '⌦')}</button>
+                    {/if}
+                    <span
+                      class="chip {train.state.toLowerCase()}"
+                      title="{STATE_HELP[train.state] ?? ''}{dropped
+                        ? ' · cleared from this sim'
+                        : sims.ui.removeScheduled && !assignment ? ' · stays on the network' : ''}"
+                    >{train.state.toLowerCase()}</span>
+                  </span>
+                </div>
+                {#if assignment}
+                  <div class="assignchip mono">
+                    ⇥ {assignment.presetName}
+                    <button
+                      class="unassign"
+                      title="drop this assignment"
                       onclick={(e) => {
                         e.stopPropagation();
-                        sims.toggleException(train.id);
+                        sims.unassign(train.id);
                       }}
-                    >{sims.ui.removeScheduled
-                      ? (excepted ? 'kept' : '⊕')
-                      : (excepted ? 'removed' : '⌦')}</button>
-                  {/if}
-                  <span
-                    class="chip {train.state.toLowerCase()}"
-                    title="{STATE_HELP[train.state] ?? ''}{dropped
-                      ? ' · cleared from this sim'
-                      : sims.ui.removeScheduled && !assignment ? ' · stays on the network' : ''}"
-                  >{train.state.toLowerCase()}</span>
-                </span>
+                    >×</button>
+                  </div>
+                {/if}
+                {#if showOwners}
+                  <div class="sub mono" class:unowned={!train.owner}>
+                    {train.owner || 'no owner'}
+                  </div>
+                {/if}
               </div>
-              {#if assignment}
-                <div class="assignchip mono">
-                  ⇥ {assignment.presetName}
-                  <button
-                    class="unassign"
-                    title="drop this assignment"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      sims.unassign(train.id);
-                    }}
-                  >×</button>
-                </div>
-              {/if}
-              {#if showOwners}
-                <div class="sub mono" class:unowned={!train.owner}>
-                  {train.owner || 'no owner'}
-                </div>
-              {/if}
-            </div>
-          {/each}
+            {/each}
+          {/if}
           {/each}
         </div>
       {/if}
@@ -492,6 +640,63 @@
 {#if trainDrag}
   <div class="ghost filing mono" style="left: {trainDrag.x + 12}px; top: {trainDrag.y + 8}px">
     📁 {trainDrag.name}
+  </div>
+{/if}
+{#if folderDrag}
+  <div class="ghost filing mono" style="left: {folderDrag.x + 12}px; top: {folderDrag.y + 8}px">
+    📁 {folderDrag.label}
+  </div>
+{/if}
+
+{#if autoSortOpen}
+  <div class="autosort-backdrop" role="presentation" onclick={closeAutoSort}>
+    <div
+      class="autosort dialog panel"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Sort trains into folders"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={() => {}}
+    >
+      <div class="head mono">
+        <span class="title">sort trains</span>
+        <span class="dim">category → line</span>
+        <span class="spacer"></span>
+        <button class="x" onclick={closeAutoSort} disabled={autoSortBusy}>×</button>
+      </div>
+      <div class="body">
+        <p class="note">File the roster by each train's CRN category, then its line as a
+          sub-folder — “Category/Line”. Trains with no category are left unfiled.</p>
+        <div class="modes">
+          <label class:sel={!autoSortOverwrite}>
+            <input type="radio" value="fill" checked={!autoSortOverwrite}
+                   onclick={() => (autoSortOverwrite = false)} />
+            <span class="mname">Fill unfiled only</span>
+            <span class="mdesc dim">trains already in a folder are left where they are; nothing is moved</span>
+          </label>
+          <label class:sel={autoSortOverwrite}>
+            <input type="radio" value="overwrite" checked={autoSortOverwrite}
+                   onclick={() => (autoSortOverwrite = true)} />
+            <span class="mname">Redo everything</span>
+            <span class="mdesc dim">every train's folder is replaced — a manual filing is overwritten</span>
+          </label>
+        </div>
+        {#if autoSortDone}<p class="ok mono">{autoSortDone}</p>{/if}
+        {#if folders.ui.error}<p class="err mono">{folders.ui.error}</p>{/if}
+      </div>
+      <div class="foot">
+        {#if autoSortDone}
+          <button class="go" onclick={closeAutoSort}>done</button>
+        {:else}
+          <button onclick={closeAutoSort} disabled={autoSortBusy}>cancel</button>
+          <button class="sortbtn" class:overwrite={autoSortOverwrite} disabled={autoSortBusy}
+            onclick={() => void runAutoSort()}>
+            {autoSortBusy ? 'sorting…' : autoSortOverwrite ? '⇩ redo everything' : '⇩ sort'}
+          </button>
+        {/if}
+      </div>
+    </div>
   </div>
 {/if}
 
@@ -655,6 +860,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    touch-action: none;
   }
   .foldername-btn:hover {
     color: var(--station);
@@ -775,6 +981,29 @@
     color: var(--ok);
     border-color: var(--ok);
   }
+  .impt {
+    font-size: 12px;
+    line-height: 1;
+    min-width: 24px;
+    padding: 3px 6px;
+    border-color: var(--border);
+    background: var(--control);
+    color: var(--text-dim);
+  }
+  .impt:hover {
+    color: var(--station);
+    border-color: var(--station);
+  }
+  .impt:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .imperr {
+    padding: 4px 10px;
+    font-size: 10px;
+    color: var(--crit);
+    border-bottom: 1px solid var(--grid);
+  }
   .chip {
     font-size: 10px;
     font-family: var(--font-data);
@@ -812,5 +1041,107 @@
     padding: 2px 8px;
     font-size: 11px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  }
+  .autosort-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+  }
+  .autosort.dialog {
+    width: 480px;
+    max-width: calc(100vw - 32px);
+    display: flex;
+    flex-direction: column;
+  }
+  .autosort .head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    font-size: 11px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-raised);
+  }
+  .autosort .title {
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .autosort .spacer {
+    flex: 1;
+  }
+  .autosort .x {
+    border-color: transparent;
+    background: transparent;
+    color: var(--text-dim);
+  }
+  .autosort .body {
+    padding: 12px;
+  }
+  .autosort .note {
+    margin: 0 0 12px;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .autosort .modes {
+    display: grid;
+    gap: 6px;
+  }
+  .autosort .modes label {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    align-items: baseline;
+    gap: 8px;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .autosort .modes label.sel {
+    border-color: var(--station);
+    background: var(--control);
+  }
+  .autosort .mname {
+    font-weight: 600;
+  }
+  .autosort .mdesc {
+    font-size: 11px;
+  }
+  .autosort .dim {
+    color: var(--text-dim);
+  }
+  .autosort .ok {
+    margin: 12px 0 0;
+    color: var(--ok);
+    font-size: 11px;
+  }
+  .autosort .err {
+    margin: 12px 0 0;
+    color: var(--crit);
+    font-size: 11px;
+  }
+  .autosort .foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 9px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--panel-raised);
+  }
+  .autosort .go {
+    color: var(--ok);
+    border-color: var(--ok);
+  }
+  .autosort .sortbtn {
+    color: var(--ok);
+    border-color: var(--ok);
+  }
+  .autosort .sortbtn.overwrite {
+    color: var(--warn);
+    border-color: var(--warn);
   }
 </style>

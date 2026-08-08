@@ -1,30 +1,30 @@
 <script lang="ts">
   /**
-   * The preset library panel (W4): list, import-from-train, and a detail
-   * drawer with the whitelisted condition-value editor. Everything the server
-   * refuses to edit renders read-only.
+   * The preset library panel (W4): list and a detail drawer with the
+   * whitelisted condition-value editor. Trains are imported as presets from
+   * the train panel, not here. Everything the server refuses to edit renders
+   * read-only.
    */
   import { onMount } from 'svelte';
   import { presets } from '../stores/presets.svelte';
-  import { liveTrains } from '../stores/liveTrains.svelte';
   import { session } from '../stores/session.svelte';
   import { sims } from './sims.svelte';
   import { folders } from './folders.svelte';
   import type { PresetFieldSpec, PresetNodeDto } from '../api/types';
 
-  let importOpen = $state(false);
   /** Folder header being renamed inline, and its draft text. */
   let renamingFolder = $state('');
   let folderDraft = $state('');
 
   const grouped = $derived.by(() => {
-    const groups = folders.group('p', presets.ui.list, (p) => p.folder);
+    const rows = folders.group('p', presets.ui.list, (p) => p.folder);
     // Mid-drag, Unfiled has to exist as a target even when empty — otherwise a library
     // where everything is filed offers no way to drag a preset back out.
-    if (sims.ui.drag && !groups.some((g) => g.path === ''))
-      groups.push({ path: '', label: 'Unfiled', depth: 0, items: [], collapsed: false, hasItems: true });
-    return groups;
+    if (sims.ui.drag && !rows.some((r) => r.kind === 'folder' && r.path === ''))
+      rows.push({ kind: 'folder', path: '', label: 'Unfiled', depth: 0, collapsed: false, hasItems: true, hasContent: true });
+    return rows;
   });
+  const folderCount = $derived(grouped.filter((r) => r.kind === 'folder').length);
   const knownFolders = $derived(
     folders.known([...presets.ui.list.map((p) => p.folder), ...folders.ui.extra.p]),
   );
@@ -64,9 +64,6 @@
       void presets.renameFolder(from, to);
     }
   }
-  let importTrain = $state('');
-  let importName = $state('');
-  let importError = $state('');
   let confirmDelete = $state('');
   let nameDraft = $state('');
 
@@ -137,17 +134,6 @@
       value = Math.max(spec.min ?? 0, Math.min(spec.max ?? parsed, parsed));
     }
     void presets.editValue(detail.id, { entry, target, col, row, key: spec.key, value });
-  }
-
-  async function submitImport() {
-    importError = '';
-    const error = await presets.createFromTrain(importTrain, importName.trim());
-    if (error) {
-      importError = error;
-      return;
-    }
-    importOpen = false;
-    importName = '';
   }
 
   function openDetail(id: string) {
@@ -346,7 +332,6 @@
           newFolderDraft = '';
         }}
       >+ folder</button>
-      <button class="importbtn" onclick={() => (importOpen = !importOpen)}>+ train</button>
     </div>
     {#if newFolderOpen}
       <div class="newfolderrow">
@@ -370,125 +355,113 @@
         </datalist>
       </div>
     {/if}
-    {#if importOpen}
-      <div class="import">
-        <select bind:value={importTrain} disabled={presets.ui.busy}>
-          <option value="" disabled>pick a train…</option>
-          {#each liveTrains.ui.roster as train (train.id)}
-            <option value={train.id}>{train.name}</option>
-          {/each}
-        </select>
-        <input type="text" placeholder="preset name (train name if empty)" bind:value={importName} />
-        <div class="import-actions">
-          <button disabled={!importTrain || presets.ui.busy} onclick={() => void submitImport()}>import schedule</button>
-          {#if importError}<span class="err mono">{importError}</span>{/if}
-        </div>
-      </div>
-    {/if}
     {#if presets.ui.status === 'error'}
       <div class="empty-state">{presets.ui.error}</div>
     {:else if presets.ui.status !== 'ready'}
       <div class="empty-state">loading…</div>
     {:else if presets.ui.list.length === 0}
-      <div class="empty-state">No presets yet — import a train's schedule above, or save one in-game from the Advanced Schedule editor.</div>
+      <div class="empty-state">No presets yet — import a train's schedule from the train list, or save one in-game from the Advanced Schedule editor.</div>
     {:else}
       <div class="list">
-        {#each grouped as group (group.path)}
-          {#if group.path !== '' || grouped.length > 1}
+        {#each grouped as row (row.kind + ':' + row.path)}
+          {#if row.kind === 'folder'}
+            {#if row.path !== '' || folderCount > 1}
+              <div
+                class="folder mono"
+                class:droppable={sims.ui.drag != null}
+                class:drop={sims.ui.drag != null && hoverFolder === row.path}
+                data-preset-folder={row.path}
+                style="padding-left: {6 + row.depth * 10}px"
+              >
+                <button
+                  class="twist"
+                  onclick={() => folders.toggle('p', row.path)}
+                  title={row.collapsed ? 'expand' : 'collapse'}
+                >{row.collapsed ? '▸' : '▾'}</button>
+                {#if renamingFolder === row.path && row.path !== ''}
+                  <input
+                    class="foldername"
+                    use:autofocus
+                    bind:value={folderDraft}
+                    onblur={commitRename}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') renamingFolder = '';
+                    }}
+                  />
+                {:else}
+                  <button
+                    class="foldername-btn"
+                    ondblclick={() => row.path && startRename(row.path)}
+                    onclick={() => folders.toggle('p', row.path)}
+                    title={row.path ? `${row.path} — double-click to rename` : 'presets in no folder'}
+                  >📁 {row.label}</button>
+                  {#if (row.path !== '' && !row.hasContent)}
+                    <button
+                      class="delfolder"
+                      title="remove this empty folder"
+                      onclick={() => folders.removeFolder('p', row.path)}
+                    >×</button>
+                  {/if}
+                {/if}
+              </div>
+              {#if (row.path !== '' && !row.hasContent) && !row.collapsed}
+                <div
+                  class="dropnote mono"
+                  class:drop={sims.ui.drag != null && hoverFolder === row.path}
+                  data-preset-folder={row.path}
+                  style="padding-left: {16 + row.depth * 10}px"
+                >drag presets here</div>
+              {/if}
+            {/if}
+          {:else}
+            {#each row.items as preset (preset.id)}
             <div
-              class="folder mono"
-              class:droppable={sims.ui.drag != null}
-              class:drop={sims.ui.drag != null && hoverFolder === group.path}
-              data-preset-folder={group.path}
-              style="padding-left: {6 + group.depth * 10}px"
+              class="preset"
+              class:armed={sims.ui.armed?.presetId === preset.id}
+              style="padding-left: {10 + row.depth * 10}px"
             >
               <button
-                class="twist"
-                onclick={() => folders.toggle('p', group.path)}
-                title={group.collapsed ? 'expand' : 'collapse'}
-              >{group.collapsed ? '▸' : '▾'}</button>
-              {#if renamingFolder === group.path && group.path !== ''}
-                <input
-                  class="foldername"
-                  use:autofocus
-                  bind:value={folderDraft}
-                  onblur={commitRename}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter') e.currentTarget.blur();
-                    if (e.key === 'Escape') renamingFolder = '';
-                  }}
-                />
-              {:else}
-                <button
-                  class="foldername-btn"
-                  ondblclick={() => group.path && startRename(group.path)}
-                  onclick={() => folders.toggle('p', group.path)}
-                  title={group.path ? `${group.path} — double-click to rename` : 'presets in no folder'}
-                >📁 {group.label}</button>
-                {#if group.path !== '' && !group.hasItems}
+                class="row"
+                title="click: open · drag onto a train to assign"
+                onpointerdown={(e) => rowPointerDown(e, preset.id, preset.name)}
+                onpointermove={rowPointerMove}
+                onpointerup={rowPointerUp}
+                onpointercancel={() => {
+                  dragCandidate = null;
+                  hoverFolder = null;
+                  sims.ui.drag = null;
+                }}
+                onclick={() => rowClick(preset.id)}
+              >
+                <span class="name">{preset.name}</span>
+                <span class="entries mono">{preset.entries}</span>
+              </button>
+              <div class="subrow">
+                <span class="sub mono">{preset.source} · {age(preset.updatedMs)}</span>
+                <span class="actions">
                   <button
-                    class="delfolder"
-                    title="remove this empty folder"
-                    onclick={() => folders.removeFolder('p', group.path)}
-                  >×</button>
-                {/if}
-              {/if}
+                    class="assignbtn mono"
+                    class:on={sims.ui.armed?.presetId === preset.id}
+                    title="assign to a train: arm, then click a train (or just drag the row)"
+                    onclick={() => sims.arm(preset.id, preset.name)}
+                  >⇥</button>
+                  <button
+                    class="dup mono"
+                    title="duplicate"
+                    disabled={presets.ui.busy}
+                    onclick={() => void presets.duplicate(preset.id)}
+                  >⧉</button>
+                  {#if confirmDelete === preset.id}
+                    <button class="del confirm mono" onclick={() => void presets.remove(preset.id)}>sure?</button>
+                  {:else}
+                    <button class="del mono" onclick={() => (confirmDelete = preset.id)}>×</button>
+                  {/if}
+                </span>
+              </div>
             </div>
-            {#if group.path !== '' && !group.hasItems && !group.collapsed}
-              <div
-                class="dropnote mono"
-                class:drop={sims.ui.drag != null && hoverFolder === group.path}
-                data-preset-folder={group.path}
-                style="padding-left: {16 + group.depth * 10}px"
-              >drag presets here</div>
-            {/if}
+            {/each}
           {/if}
-          {#each group.items as preset (preset.id)}
-          <div
-            class="preset"
-            class:armed={sims.ui.armed?.presetId === preset.id}
-            style="padding-left: {10 + group.depth * 10}px"
-          >
-            <button
-              class="row"
-              title="click: open · drag onto a train to assign"
-              onpointerdown={(e) => rowPointerDown(e, preset.id, preset.name)}
-              onpointermove={rowPointerMove}
-              onpointerup={rowPointerUp}
-              onpointercancel={() => {
-                dragCandidate = null;
-                hoverFolder = null;
-                sims.ui.drag = null;
-              }}
-              onclick={() => rowClick(preset.id)}
-            >
-              <span class="name">{preset.name}</span>
-              <span class="entries mono">{preset.entries}</span>
-            </button>
-            <div class="subrow">
-              <span class="sub mono">{preset.source} · {age(preset.updatedMs)}</span>
-              <span class="actions">
-                <button
-                  class="assignbtn mono"
-                  class:on={sims.ui.armed?.presetId === preset.id}
-                  title="assign to a train: arm, then click a train (or just drag the row)"
-                  onclick={() => sims.arm(preset.id, preset.name)}
-                >⇥</button>
-                <button
-                  class="dup mono"
-                  title="duplicate"
-                  disabled={presets.ui.busy}
-                  onclick={() => void presets.duplicate(preset.id)}
-                >⧉</button>
-                {#if confirmDelete === preset.id}
-                  <button class="del confirm mono" onclick={() => void presets.remove(preset.id)}>sure?</button>
-                {:else}
-                  <button class="del mono" onclick={() => (confirmDelete = preset.id)}>×</button>
-                {/if}
-              </span>
-            </div>
-          </div>
-          {/each}
         {/each}
       </div>
     {/if}
@@ -528,23 +501,6 @@
   .newfolderrow {
     padding: 6px 10px 0;
     display: flex;
-  }
-  .import {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--border);
-  }
-  .import select,
-  .import input {
-    width: 100%;
-    font-size: 11px;
-  }
-  .import-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
   }
   .err {
     color: var(--crit);

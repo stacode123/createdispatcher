@@ -42,15 +42,22 @@ public sealed interface SimCondition {
 
     /**
      * Realism's {@code TimeOfDayRealistic}: a timetable departure. Each stop
-     * books one absolute departure tick — its slot — and the train leaves the
-     * moment it is both ready and past that slot, so a train that pulls in
-     * behind schedule finds its slot already gone and departs at once, and
-     * keeps doing so at every following stop until the timetable catches up.
+     * books one absolute departure day time — its slot — and the train
+     * leaves the moment it is both ready and the world's day time has
+     * reached that slot, so a train that pulls in behind schedule finds its
+     * slot already gone and departs at once, and keeps doing so at every
+     * following stop until the timetable catches up.
      *
      * <p>Slots are strictly increasing: the next one chains off the slot just
      * used, not off the arrival. That is what stops a loop calling twice at
      * the same station from departing on the spot — the second call books
      * tomorrow — while a genuinely late train still runs ahead.
+     *
+     * <p>Every quantity here is day time, never tick: {@link SimClock
+     * #dayTimeAt} already accounts for whatever the world's day-time rate is
+     * doing — flat, zoned, or frozen — so comparing day time against day
+     * time needs no further assumption about how that rate behaves. Mirrors
+     * the fix in Realism's own class of the same name.
      */
     record TimeOfDayRealistic(int hour, int minute) implements SimCondition {
 
@@ -58,70 +65,74 @@ public sealed interface SimCondition {
         /** Day time 0 is 06:00, so this shifts it to ticks since midnight. */
         private static final long MIDNIGHT_OFFSET = 6000L;
         /**
-         * How far behind the timetable a train may be and still count as
-         * merely late. Past this Realism re-timetables it onto the first slot
-         * after its arrival rather than sprinting through cycles of backlog.
+         * How many day-time ticks behind the timetable a train may be and
+         * still count as merely late. Past this Realism re-timetables it onto
+         * the first slot after its arrival rather than sprinting through
+         * cycles of backlog.
          */
         private static final long MAX_RECOVERY = 7L * DAY;
 
         @Override
         public boolean tick(SimClock clock, long tick, int column, int elapsed, TrainState train) {
-            long slot = bookedSlot(clock, tick, column, train);
-            if (tick < slot)
+            long dayTime = clock.dayTimeAt(tick);
+            long slot = bookedSlot(clock, tick, dayTime, column, train);
+            if (dayTime < slot)
                 return false;
             train.lastDepartureSlot = slot;
             return true;
         }
 
         /**
-         * This stop's departure tick. Resolved once and kept in the column's
-         * context (cleared on arrival and on completion), so every stop books
-         * its own slot.
+         * This stop's departure day time. Resolved once and kept in the
+         * column's context (cleared on arrival and on completion), so every
+         * stop books its own slot.
          */
-        private long bookedSlot(SimClock clock, long tick, int column, TrainState train) {
+        private long bookedSlot(SimClock clock, long tick, long dayTime, int column, TrainState train) {
             long stored = train.columnDepartAt[column];
             // A slot is never more than a day ahead; anything else is a
             // leftover from an edited schedule or a changed world time.
-            if (stored != TrainState.UNBOOKED && stored - tick <= DAY)
+            if (stored != TrainState.UNBOOKED && stored - dayTime <= DAY)
                 return stored;
-            long slot = bookSlot(clock, tick, train);
+            long slot = bookSlot(clock, tick, dayTime, train);
             train.columnDepartAt[column] = slot;
             return slot;
         }
 
-        private long bookSlot(SimClock clock, long tick, TrainState train) {
-            long arrival = arrival(train, tick);
+        private long bookSlot(SimClock clock, long tick, long dayTime, TrainState train) {
+            long arrival = arrival(clock, train, tick, dayTime);
             long previous = train.lastDepartureSlot;
             // Chain onto the previous slot rather than onto the arrival, so
             // that being late only moves the train, never the timetable.
             if (previous != TrainState.UNBOOKED && previous <= arrival
                     && arrival - previous <= MAX_RECOVERY)
-                return occurrenceFrom(clock, tick, previous, false);
-            return occurrenceFrom(clock, tick, arrival, true);
+                return occurrenceFrom(previous, false);
+            return occurrenceFrom(arrival, true);
         }
 
         /**
-         * The tick the train started waiting here, falling back to now when
-         * that is unknown — tick 0 is a real arrival here, so only the -1
-         * "never arrived" marker counts as missing.
+         * The day time the train started waiting here, falling back to now
+         * when that is unknown — tick 0 is a real arrival here, so only the
+         * -1 "never arrived" marker counts as missing.
          */
-        private long arrival(TrainState train, long tick) {
-            long arrival = train.arrivalTick;
-            if (arrival < 0 || arrival > tick || tick - arrival > MAX_RECOVERY)
-                return tick;
-            return arrival;
+        private long arrival(SimClock clock, TrainState train, long tick, long dayTime) {
+            long arrivalTick = train.arrivalTick;
+            if (arrivalTick < 0 || arrivalTick > tick)
+                return dayTime;
+            long arrivalDayTime = clock.dayTimeAt(arrivalTick);
+            if (dayTime - arrivalDayTime > MAX_RECOVERY)
+                return dayTime;
+            return arrivalDayTime;
         }
 
         /**
-         * First tick matching the configured time of day counted from
+         * First day time matching the configured time of day counted from
          * {@code from} — inclusive of {@code from} itself, or a full day
-         * later when {@code inclusive} is false.
+         * later when {@code inclusive} is false. Pure day-time arithmetic: no
+         * conversion to or from tick, so no assumption about how fast, or
+         * whether, day time is currently advancing.
          */
-        private long occurrenceFrom(SimClock clock, long tick, long from, boolean inclusive) {
-            // Rewinding day time by the elapsed ticks is Realism's own way of
-            // recovering the time of day back then, so a stopped or scaled
-            // daylight cycle lands the projection where the real train lands.
-            long timeOfDay = Math.floorMod(clock.dayTimeAt(tick) - (tick - from) + MIDNIGHT_OFFSET, DAY);
+        private long occurrenceFrom(long from, boolean inclusive) {
+            long timeOfDay = Math.floorMod(from + MIDNIGHT_OFFSET, DAY);
             long untilTarget = Math.floorMod(targetTimeOfDay() - timeOfDay, DAY);
             if (untilTarget == 0 && !inclusive)
                 untilTarget = DAY;
