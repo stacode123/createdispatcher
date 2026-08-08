@@ -11,7 +11,7 @@ bearing.
 ./gradlew :fabric:runClient      # second loader, verified after Forge
 ./gradlew :common:test           # the simulator's JUnit suite — Minecraft-free
 ./gradlew :common:test --tests '*Benchmark*' -Dsim.benchmark=true   # opt-in perf benchmark
-cd web && npm run build          # frontend — commit web/dist/
+# the frontend needs Node (>= 20) — `./gradlew build` runs npm ci + vite build itself
 ```
 
 - **Java 17** is enough (that is what CI uses); a 21 JDK works too. Bytecode target is 17.
@@ -52,7 +52,7 @@ common/src/main/java/net/Dispatcher/
 ├── foundation/network/      hand-rolled packets
 ├── Interfaces/              the interfaces mixins implement
 └── web/                     the embedded web server — server-only, no MC packet/client classes
-web/                         Vite + Svelte 5 frontend; dist/ is committed
+└── web/                     Vite + Svelte 5 frontend; gitignored, built by `:common:buildWebDist`
 ```
 
 ## The layers
@@ -138,8 +138,11 @@ World state (presets, plans, folders, calibration, audit) lives under `<world>/c
 
 ## The frontend
 
-`web/` is a Vite + Svelte 5 SPA, committed **built** in `web/dist/`, which `common/build.gradle`
-copies into the jar. Gradle and CI never run Node.
+`web/` is a Vite + Svelte 5 SPA, compiled at build time by Gradle itself (`:common:npmCi` +
+`:common:buildWebDist`, both `Exec` tasks running `npm`) into `web/dist/`, which
+`common/build.gradle` copies into the jar. `web/dist/` is **gitignored** — it is a build artifact,
+never committed. Node is only needed on machines that run `./gradlew build` (like CI); players never
+need it.
 
 ```bash
 cd web
@@ -148,13 +151,8 @@ npm run dev                                     # :5173, proxies /api + /auth to
 DISPATCHER_PROXY=http://host:8455 npm run dev   # …or to any other server
 VITE_MOCK=1 npm run dev                         # no backend at all: synthetic network + fixtures
 npm run check                                   # types
-npm run build                                   # → dist/  (commit it)
+npm run build                                   # → dist/  (gitignored; `./gradlew build` runs this)
 ```
-
-`:common:verifyWebDist` recomputes the source digest recorded in `web/dist/.buildinfo.json` and warns
-when the committed build is stale — and **fails** when the `CI` environment variable is set. That
-digest recipe is duplicated in `common/build.gradle` (Groovy) and `web/vite.config.ts`; **change both
-together.**
 
 For a dev-server login: enable `Web Enabled`, then use `/dispatcher web session deployer`.
 

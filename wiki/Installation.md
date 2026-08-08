@@ -8,7 +8,7 @@
 | Loader | Forge 47.3.3+ **or** Fabric (loader 0.17.2+, Fabric API 0.92.2+) |
 | Create | 6.0.8 (Forge `6.0.8-289` / Fabric `6.0.8.1+build.1744`) |
 | Architectury API | 9.2.14+ |
-| DragonLib | required — a **separate download on Forge**; bundled inside the Fabric jar |
+| DragonLib | required — a **separate download on both loaders** (`1.20.1-beta-3.0.28+`; no longer bundled) |
 | Java | 17+ |
 
 On Fabric the config file is provided by **Forge Config API Port**, which Create Fabric already

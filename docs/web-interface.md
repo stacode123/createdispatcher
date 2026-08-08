@@ -279,8 +279,11 @@ within a minute. With `Web Background Projections` off it only computes while a 
 
 ## 10. Developing the frontend
 
-The frontend lives in `web/` (Vite + Svelte 5) and is committed **built**, in `web/dist/`,
-which `common/build.gradle` copies into the jar. Gradle and CI never run Node.
+The frontend lives in `web/` (Vite + Svelte 5) and is compiled **at build time**:
+`:common:npmCi` (installs `web/package-lock.json`) then `:common:buildWebDist` (runs `vite build`)
+feed `web/dist/` into `common/build.gradle`'s `processResources`, which packages it into the jar.
+`web/dist/` is gitignored — a build artifact, never committed. Node ≥ 20 is needed only on machines
+that run `./gradlew build` (including CI, which has a `setup-node` step), never by players.
 
 ```bash
 cd web
@@ -289,9 +292,8 @@ npm run dev                       # :5173, proxies /api + /auth to a dev server 
 DISPATCHER_PROXY=http://host:8455 npm run dev   # …or to any other server
 VITE_MOCK=1 npm run dev           # no backend at all: synthetic network + fixtures
 npm run check                     # types
-npm run build                     # → dist/  (commit it)
+npm run build                     # → dist/  (gitignored; `./gradlew build` runs this itself)
 ```
 
-`./gradlew check` runs `verifyWebDist`, which compares the sources against the digest recorded
-in `dist/.buildinfo.json` and warns when the committed build is stale (it fails outright when
-the `CI` environment variable is set).
+The old `verifyWebDist` freshness check was dropped along with the committed dist — there is no
+committed build left to verify against, so the jar always ships the UI the build just produced.

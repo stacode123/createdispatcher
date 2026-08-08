@@ -10,15 +10,20 @@ You need the **planner** tier to plan and simulate, and the **deployer** tier to
 A preset is a saved Create schedule. The library is shared with the in-game Presets window — the
 same files under `<world>/createdispatcher/presets/`.
 
-- **Create** one from a train that already has a schedule (its current schedule is copied), or
-  **duplicate** an existing preset.
+- **Create** one from a train that already has a schedule — right-click the **⤓** on any train row
+  (its current schedule is copied; the train's name is the default preset name), or **duplicate**
+  an existing preset.
 - **Rename**, **delete**, and file into **folders** (1–40 characters per level, up to 4 levels).
 - **Edit values in place** — the destination of an entry, a condition's number, and so on. The
   editor only accepts edits from a whitelist of schedule fields, and the *same* whitelist is applied
   to simulation and to deploy, so you can never deploy an edit the simulator would have refused.
 
 Trains can be filed into folders too (`<world>/createdispatcher/train-folders.json`), which is how
-you keep a hundred-train network navigable. Viewers can see the filing; planners can change it.
+you keep a hundred-train network navigable. Viewers can see the filing; planners can change it —
+by dragging trains onto folders, by dragging a folder onto another to nest it, or with the
+**sort** button (deployers only): a one-shot re-filing of the whole roster by each train's CRN
+category then line (`"Category/Line"`), either filling only trains that are currently unfiled or,
+with the *redo everything* option, replacing every folder.
 
 ## 2. Assignment
 

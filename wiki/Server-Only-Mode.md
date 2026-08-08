@@ -49,7 +49,8 @@ as it would without Dispatcher.
 **The server's registry must stay a subset of its clients'.** That is not specific to this mod: any
 *other* content-adding mod you run server-side reintroduces the same problem. DragonLib is the
 tolerated exception here — clients running Create addons have it anyway — and the `-server` jars keep
-it as a dependency even though only the client GUI uses it.
+it as a dependency (now a separate download on both loaders, no longer bundled on Fabric) even
+though only the client GUI uses it.
 
 ## Switching a world that previously ran the full jar
 

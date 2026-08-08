@@ -26,7 +26,8 @@ station auto-schedule and Create Railways Navigator options all work) that adds:
 - Discord OAuth or one-time login links, with `viewer / planner / deployer` tiers.
 
 Zero new runtime dependencies: the JDK's own HTTP server, SSE, and a hand-rolled Svelte frontend
-committed as a build artifact so Gradle and CI stay Node-free.
+that the build compiles itself — Node is only needed on machines that run `./gradlew build`
+(such as CI), never by players.
 
 ## Server-only install
 
@@ -41,9 +42,9 @@ them at a station.
 The rule that makes this work: **the server's registry has to be a subset of the client's** — a
 client missing a registry entry the server has is disconnected during login, which is exactly what
 the Advanced Schedule item was causing. So the same caution applies to every other content-adding
-mod you run server-side, not just this one. DragonLib is fine, since clients that run Create addons
-generally have it already; the `-server` jar keeps it as a dependency even though only the client GUI
-uses it.
+mod you run server-side, not just this one. DragonLib is a plain library and is declared as a
+required external dependency on both loaders (a normal mod jar on Fabric, not jar-in-jar).
+The `-server` jar keeps it as a dependency even though only the client GUI uses it.
 
 The normal jar can be switched over without re-downloading — create an empty
 `config/createdispatcher/server-only.marker`, or pass `-Dcreatedispatcher.serverOnly=true`. Either
@@ -68,14 +69,16 @@ way the server logs one line at startup saying the item was not registered.
 Java 17 is enough (that is what CI builds on); a 21 JDK works too. Bytecode target is 17. The Gradle
 daemon is disabled, so every invocation cold-starts — allow a couple of minutes.
 
-Frontend (only needed when you change `web/src`):
+Frontend (only needed when you change `web/src`; `./gradlew build` already runs this via
+`:common:npmCi` + `:common:buildWebDist`):
 
 ```bash
-cd web && npm install && npm run build   # writes web/dist — commit it
+cd web && npm run build   # writes web/dist — gitignored; Gradle packages it into the jar
 ```
 
-`:common:verifyWebDist` recomputes the source digest recorded in `web/dist/.buildinfo.json` and fails
-the build under CI if `dist/` is stale.
+`:common:verifyWebDist` was dropped when the frontend moved back into the Gradle build: dist/ is
+no longer committed, so there is nothing to keep honest — the jar always ships the UI the build
+just produced.
 
 ## Relationship to Create Realism
 

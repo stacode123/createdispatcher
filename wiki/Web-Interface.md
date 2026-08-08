@@ -76,7 +76,7 @@ because COMMON tomls ship inside client installs and SERVER configs sync to clie
 | `none` | nothing — logged in, but every API call is refused |
 | `viewer` | live map, trains, notifications, replays, corridor diagrams |
 | `planner` | the above, plus presets, saved plans, train folders and planner simulations |
-| `deployer` | the above, plus **Deploy**, the audit journal and the debug endpoints |
+| `deployer` | the above, plus **Deploy**, the audit journal, the debug endpoints **and the folder auto-sort** |
 
 Membership lives in `config/createdispatcher/allowlist.json`:
 

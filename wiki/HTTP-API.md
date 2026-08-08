@@ -97,9 +97,14 @@ Tier is the *minimum* required.
 | `GET` | `/api/trains` | viewer | the train roster and its `rosterVersion` |
 | `GET` | `/api/live/positions` | viewer | the latest position frame for every train |
 | `GET` | `/api/stations?graph=<uuid>[&v=]` | viewer | logical station groups → platforms with map coordinates |
+| `GET` | `/api/station-tags` | viewer | CRN station tags — `{tags: [{tag, stations: [platform…]}]}`, grouped across every network |
 | `GET` | `/api/notifications` | viewer | active notifications (`SIGNAL_WAIT`, `DEADLOCK`, `DETOUR`) |
 | `GET` | `/api/replays` | viewer | replay index |
 | `GET` | `/api/replays/<id>` | viewer | one replay in full |
+
+Each roster row carries `line` and `category` — the CRN travel section the train is currently inside
+(`""` without CRN or outside a section) — along with the existing `owner`, `destination`,
+`currentStation` and state fields.
 
 ### Corridors
 
@@ -134,7 +139,12 @@ Preset errors: `preset_full`, `preset_invalid`, `preset_empty`, `bad_name`, `bad
 | `POST` | `/api/plans` | save; body with an `id` overwrites, without one creates |
 | `DELETE` | `/api/plans?id=<uuid>` | delete |
 | `GET` | `/api/train-folders` | `{folders: {trainUuid: "folder/path"}}` — **viewer** may read this one |
-| `PATCH` | `/api/train-folders` | `{trainId, folder}` files one train (blank unfiles) · `{from, to}` re-files a whole folder subtree |
+| `PATCH` | `/api/train-folders` | `{trainId, folder}` files one train (blank unfiles) · `{from, to}` re-files a whole folder subtree · `{autoSort: true, overwrite?}` (see below) |
+
+`{autoSort: true}` re-files the whole roster from each train's CRN category then line
+(`"Category/Line"`, trains without a category left unfiled) — **deployer-only**, the one folder
+call that is not planner-gated. `overwrite: true` replaces every existing folder (manual filings
+included); `false` (default) only files currently-unfiled trains. Returns `{changed: n}`.
 
 ### Simulations (planner)
 
